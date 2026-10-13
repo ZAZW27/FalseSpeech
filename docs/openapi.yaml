@@ -1,0 +1,561 @@
+openapi: 3.0.3
+info:
+    title: False Speech API
+    description: |
+        Backend API for False Speech, an AI voice deepfake detection system.
+        Supports account management, subscription tiers, billing, detection
+        history, and real-time audio classification over WebSocket.
+    version: 0.1.0
+    contact:
+        name: False Speech Project
+
+servers:
+    - url: http://localhost:7860
+      description: Local development
+
+tags:
+    - name: health
+      description: Liveness and readiness checks
+    - name: auth
+      description: Registration, login, logout
+    - name: user
+      description: User profile management
+    - name: subscription
+      description: Tiers, upgrades, downgrades, billing
+    - name: history
+      description: Detection session history
+
+paths:
+    /:
+        get:
+            tags: [health]
+            summary: Health check
+            description: Confirms the server is running and whether the model is loaded.
+            operationId: getHealth
+            responses:
+                "200":
+                    description: Server is up
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/HealthResponse"
+
+    /api/auth/register:
+        post:
+            tags: [auth]
+            summary: Register a new account
+            operationId: registerUser
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/RegisterRequest"
+            responses:
+                "201":
+                    description: Account created
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/RegisterResponse"
+                "400":
+                    description: Invalid input
+                "409":
+                    description: Email or phone already registered
+
+    /api/auth/login:
+        post:
+            tags: [auth]
+            summary: Login with email or phone
+            operationId: loginUser
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/LoginRequest"
+            responses:
+                "200":
+                    description: Login successful
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/LoginResponse"
+                "401":
+                    description: Invalid credentials
+
+    /api/auth/logout:
+        post:
+            tags: [auth]
+            summary: Logout current session
+            operationId: logoutUser
+            security:
+                - bearerAuth: []
+            responses:
+                "204":
+                    description: Session ended
+                "401":
+                    description: Not authenticated
+
+    /api/users/me:
+        get:
+            tags: [user]
+            summary: Get current user profile
+            operationId: getCurrentUser
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: Profile data
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/UserPublic"
+                "401":
+                    description: Not authenticated
+        patch:
+            tags: [user]
+            summary: Update current user profile
+            operationId: updateCurrentUser
+            security:
+                - bearerAuth: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/UpdateProfileRequest"
+            responses:
+                "200":
+                    description: Profile updated
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/UserPublic"
+                "400":
+                    description: Invalid input
+                "401":
+                    description: Not authenticated
+
+    /api/tiers:
+        get:
+            tags: [subscription]
+            summary: List available subscription tiers
+            operationId: listTiers
+            responses:
+                "200":
+                    description: Tier list
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                items:
+                                    $ref: "#/components/schemas/Tier"
+
+    /api/subscription/upgrade:
+        post:
+            tags: [subscription]
+            summary: Upgrade to a higher tier
+            operationId: upgradeSubscription
+            security:
+                - bearerAuth: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/UpgradeRequest"
+            responses:
+                "200":
+                    description: Payment URL returned
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/UpgradeResponse"
+                "400":
+                    description: Target tier is not higher than current tier
+                "401":
+                    description: Not authenticated
+
+    /api/subscription/downgrade:
+        post:
+            tags: [subscription]
+            summary: Downgrade to a lower tier
+            operationId: downgradeSubscription
+            security:
+                - bearerAuth: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/DowngradeRequest"
+            responses:
+                "200":
+                    description: Downgrade scheduled
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/DowngradeResponse"
+                "400":
+                    description: Target tier is not lower than current tier
+                "401":
+                    description: Not authenticated
+
+    /api/billing/history:
+        get:
+            tags: [subscription]
+            summary: List billing history
+            operationId: getBillingHistory
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: page
+                  in: query
+                  schema:
+                      type: integer
+                      default: 1
+                - name: per_page
+                  in: query
+                  schema:
+                      type: integer
+                      default: 20
+            responses:
+                "200":
+                    description: Invoice list
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                items:
+                                    $ref: "#/components/schemas/Invoice"
+                "401":
+                    description: Not authenticated
+
+    /api/history:
+        get:
+            tags: [history]
+            summary: List detection session history
+            operationId: getDetectionHistory
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: page
+                  in: query
+                  schema:
+                      type: integer
+                      default: 1
+                - name: per_page
+                  in: query
+                  schema:
+                      type: integer
+                      default: 20
+            responses:
+                "200":
+                    description: Session list
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                items:
+                                    $ref: "#/components/schemas/DetectionSession"
+                "401":
+                    description: Not authenticated
+
+    /api/history/{session_id}:
+        get:
+            tags: [history]
+            summary: Get details for one detection session
+            operationId: getDetectionSessionDetail
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: session_id
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Session detail
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/DetectionSessionDetail"
+                "404":
+                    description: Session not found
+
+components:
+    securitySchemes:
+        bearerAuth:
+            type: http
+            scheme: bearer
+            bearerFormat: JWT
+
+    schemas:
+        HealthResponse:
+            type: object
+            required: [status, model_loaded]
+            properties:
+                status:
+                    type: string
+                    example: ok
+                model_loaded:
+                    type: boolean
+                    example: true
+                device:
+                    type: string
+                    nullable: true
+                    example: cpu
+
+        RegisterRequest:
+            type: object
+            required: [name, email, phone, password]
+            properties:
+                name:
+                    type: string
+                    minLength: 1
+                    maxLength: 100
+                    example: Zharif Aziz
+                email:
+                    type: string
+                    format: email
+                    example: user@example.com
+                phone:
+                    type: string
+                    minLength: 8
+                    maxLength: 20
+                    example: "081234567890"
+                password:
+                    type: string
+                    minLength: 8
+                    example: correcthorsebattery
+
+        RegisterResponse:
+            type: object
+            required: [user_id, email]
+            properties:
+                user_id:
+                    type: string
+                    example: usr_01HXYZ
+                email:
+                    type: string
+                    format: email
+                    example: user@example.com
+
+        LoginRequest:
+            type: object
+            required: [email_or_phone, password]
+            properties:
+                email_or_phone:
+                    type: string
+                    example: user@example.com
+                password:
+                    type: string
+                    example: correcthorsebattery
+
+        LoginResponse:
+            type: object
+            required: [access_token, token_type, expires_in, user]
+            properties:
+                access_token:
+                    type: string
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
+                token_type:
+                    type: string
+                    example: bearer
+                expires_in:
+                    type: integer
+                    description: Token lifetime in seconds
+                    example: 3600
+                user:
+                    $ref: "#/components/schemas/UserPublic"
+
+        UserPublic:
+            type: object
+            required:
+                [
+                    id,
+                    name,
+                    email,
+                    phone,
+                    tier,
+                    quota_used,
+                    quota_limit,
+                    quota_reset_at,
+                ]
+            properties:
+                id:
+                    type: string
+                    example: usr_01HXYZ
+                name:
+                    type: string
+                    example: Zharif Aziz
+                email:
+                    type: string
+                    format: email
+                    example: user@example.com
+                phone:
+                    type: string
+                    example: "081234567890"
+                tier:
+                    type: string
+                    enum: [free, pro, pro_max, lifetime]
+                    example: free
+                quota_used:
+                    type: integer
+                    description: Seconds of detection consumed today
+                    example: 120
+                quota_limit:
+                    type: integer
+                    description: Daily limit in seconds for current tier
+                    example: 600
+                quota_reset_at:
+                    type: string
+                    format: date-time
+                    example: "2026-10-14T00:00:00Z"
+
+        UpdateProfileRequest:
+            type: object
+            properties:
+                name:
+                    type: string
+                phone:
+                    type: string
+
+        Tier:
+            type: object
+            required: [id, name, price, quota_seconds_daily, features]
+            properties:
+                id:
+                    type: string
+                    enum: [free, pro, pro_max, lifetime]
+                name:
+                    type: string
+                    example: Pro
+                price:
+                    type: integer
+                    example: 49000
+                quota_seconds_daily:
+                    type: integer
+                    example: 18000
+                features:
+                    type: array
+                    items:
+                        type: string
+                    example: ["confidence_score", "history_30d"]
+
+        UpgradeRequest:
+            type: object
+            required: [target_tier]
+            properties:
+                target_tier:
+                    type: string
+                    enum: [pro, pro_max, lifetime]
+
+        UpgradeResponse:
+            type: object
+            required: [payment_url]
+            properties:
+                payment_url:
+                    type: string
+                    format: uri
+                    example: https://app.midtrans.com/snap/v2/vtweb/abc123
+
+        DowngradeRequest:
+            type: object
+            required: [target_tier]
+            properties:
+                target_tier:
+                    type: string
+                    enum: [free, pro, pro_max]
+
+        DowngradeResponse:
+            type: object
+            required: [success, effective_at]
+            properties:
+                success:
+                    type: boolean
+                    example: true
+                effective_at:
+                    type: string
+                    format: date-time
+                    example: "2026-11-01T00:00:00Z"
+
+        Invoice:
+            type: object
+            required: [invoice_id, amount_idr, status, issued_at, tier]
+            properties:
+                invoice_id:
+                    type: string
+                    example: inv_01HABC
+                amount_idr:
+                    type: integer
+                    example: 49000
+                status:
+                    type: string
+                    enum: [pending, paid, failed, refunded]
+                    example: paid
+                issued_at:
+                    type: string
+                    format: date-time
+                paid_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                tier:
+                    type: string
+                    example: pro
+
+        DetectionSession:
+            type: object
+            required: [session_id, started_at, duration_s, fake_ratio, verdict]
+            properties:
+                session_id:
+                    type: string
+                    example: ses_01HDEF
+                started_at:
+                    type: string
+                    format: date-time
+                duration:
+                    type: number
+                    format: float
+                    example: 42.5
+                fake_ratio:
+                    type: number
+                    format: float
+                    description: Fraction of segments classified as fake
+                    example: 0.75
+                verdict:
+                    type: string
+                    enum: [real, fake, mixed]
+                    example: fake
+
+        DetectionSessionDetail:
+            type: object
+            required: [session_id, segments]
+            properties:
+                session_id:
+                    type: string
+                    example: ses_01HDEF
+                segments:
+                    type: array
+                    items:
+                        $ref: "#/components/schemas/DetectionSegment"
+
+        DetectionSegment:
+            type: object
+            required: [offset_s, is_fake, fake_prob]
+            properties:
+                offset:
+                    type: number
+                    format: float
+                    description: Start time of segment relative to session start, in seconds
+                    example: 10.0
+                is_fake:
+                    type: boolean
+                    example: true
+                fake_prob:
+                    type: number
+                    format: float
+                    example: 0.9987

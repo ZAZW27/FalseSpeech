@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Sample audio (large, not source)
+backend/samples/
+*.wav
+*.mp3
+*.flac
+*.m4a
+
+# Cloned reference repos (do not commit)
+backend/AntiDeepfake/
+
+# Node (for when frontend comes later)
+node_modules/
+frontend/dist/
+
+# Docker
+*.log

@@ -1,0 +1,38 @@
+services:
+    db:
+        image: postgres:16-alpine
+        restart: unless-stopped
+        environment:
+            POSTGRES_USER: falsespeech
+            POSTGRES_PASSWORD: falsespeech_dev
+            POSTGRES_DB: falsespeech
+        ports:
+            - "5432:5432"
+        volumes:
+            - pgdata:/var/lib/postgresql/data
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U falsespeech"]
+            interval: 5s
+            timeout: 5s
+            retries: 5
+
+    antideepfake-server:
+        build: ./backend
+        ports:
+            - "7860:7860"
+        volumes:
+            - ./backend:/home/appuser/app
+        working_dir: /home/appuser/app
+        environment:
+            DATABASE_URL: postgresql+psycopg://falsespeech:falsespeech_dev@db:5432/falsespeech
+        depends_on:
+            db:
+                condition: service_healthy
+        command: >
+            uvicorn app.main:app
+            --host 0.0.0.0
+            --port 7860
+            --reload
+
+volumes:
+    pgdata:
