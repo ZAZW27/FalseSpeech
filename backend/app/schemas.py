@@ -31,7 +31,7 @@ class UserPub(BaseModel):
     tier: str
     quota_used: int
     quota_limit: int
-    quota_reset_at: datetime
+    quota_reset_at: Optional[datetime] = None
 
 class LoginRes(BaseModel):
     access_token: str
