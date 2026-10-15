@@ -1,6 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 
-from app.service import inference
+from app.api.deps import get_curr_user
+from app.config import jwt_expires
+from app.db.models import User
+from app.db.session import get_db
 from app.schemas import (
     HealthCheck,
     RegisterReq, RegisterRes,
@@ -11,75 +15,133 @@ from app.schemas import (
     Invoice,
     DetectionSession, DetectionSessionDetail,
 )
+from app.service import auth, inference
 
 router = APIRouter()
 
-# Health --------------------------------------------------------
+# Helpers -----------------------------------------------
+def _user_pub(user: User) -> UserPub:
+    return UserPub(
+        id=str(user.id),
+        name=user.name,
+        email=user.email,
+        phone=user.phone,
+        tier=user.tier,
+        quota_used=user.quota_used,
+        quota_limit=user.quota_limit,
+        quota_reset_at=user.quota_reset_at,
+    )
+
+# Health -----------------------------------------------
 @router.get("/", response_model=HealthCheck, tags=["health"])
 def health():
-    _, device = inference.get_model()
+    _, device_used = inference.get_model()
     return HealthCheck(
         status="ok",
         model_loaded=inference.is_loaded(),
-        device=str(device) if device else None,
+        device=str(device_used) if device_used else None,
     )
 
-# Auth -----------------------------------------------------------
-@router.post("/api/auth/register", response_model=RegisterRes,status_code=201, tags=["auth"])
-def register(body: RegisterReq):
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+# Auth -----------------------------------------------
+@router.post("/api/auth/register", response_model=RegisterRes, status_code=status.HTTP_201_CREATED, tags=["auth"])
+def register(body: RegisterReq, db: Session = Depends(get_db)):
+    try:
+        user = auth.daftar_user(
+            db,
+            name=body.name,
+            email=body.email,
+            phone=body.phone,
+            password=body.password,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+    return RegisterRes(user_id=str(user.id), email=user.email)
 
 
 @router.post("/api/auth/login", response_model=LoginRes, tags=["auth"])
-def login(body: LoginReq):
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+def login(body: LoginReq, db: Session = Depends(get_db)):
+    token = auth.login_user(db, body.email_or_phone, body.password)
+    if token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Email/nomor telepon atau password salah",
+        )
+
+    user = auth.cari_user_by_email_or_phone(db, body.email_or_phone)
+    return LoginRes(
+        access_token=token,
+        token_type="bearer",
+        expires_in=jwt_expires * 60,
+        user=_user_pub(user),
+    )
 
 
-@router.post("/api/auth/logout", status_code=204, tags=["auth"])
-def logout():
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+@router.post("/api/auth/logout", status_code=status.HTTP_204_NO_CONTENT, tags=["auth"])
+def logout(user: User = Depends(get_curr_user)):
+    return None
 
-# User -----------------------------------------------------------
+# User -----------------------------------------------
 @router.get("/api/users/me", response_model=UserPub, tags=["user"])
-def get_me():
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+def get_me(user: User = Depends(get_curr_user)):
+    return _user_pub(user)
 
 
 @router.patch("/api/users/me", response_model=UserPub, tags=["user"])
-def update_me(body: UpdateProfileRequest):
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+def update_me(
+        body: UpdateProfileRequest,
+        user: User = Depends(get_curr_user),
+        db: Session = Depends(get_db),
+    ):
+    if body.name is not None:
+        user.name = body.name
+    if body.phone is not None:
+        user.phone = body.phone
+    db.commit()
+    db.refresh(user)
+    return _user_pub(user)
 
-# Tiers and Subscription ------------------------------------------
+# Tiers and Subscription -----------------------------------------------
 @router.get("/api/tiers", response_model=list[Tier], tags=["subscription"])
 def list_tiers():
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED, 
+        detail="Not implemented yet"
+    )
 
+@router.post("/api/subscription/upgrade", response_model=UpgradeRes, tags=["subscription"])
+def upgrade(body: UpgradeReq, user: User = Depends(get_curr_user)):
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Not implemented yet"
+    )
 
-@router.post("/api/subscription/upgrade", response_model=UpgradeRes,
-             tags=["subscription"])
-def upgrade(body: UpgradeReq):
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+@router.post("/api/subscription/downgrade", response_model=DowngradeRes, tags=["subscription"])
+def downgrade(body: DowngradeReq, user: User = Depends(get_curr_user)):
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Not implemented yet"
+    )
 
-
-@router.post("/api/subscription/downgrade", response_model=DowngradeRes,
-             tags=["subscription"])
-def downgrade(body: DowngradeReq):
-    raise HTTPException(status_code=501, detail="Not implemented yet")
-
-
-@router.get("/api/billing/history", response_model=list[Invoice],
-            tags=["subscription"])
-def billing_history():
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+@router.get("/api/billing/history", response_model=list[Invoice], tags=["subscription"])
+def billing_history(user: User = Depends(get_curr_user)):
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Not implemented yet"
+    )
 
 # Detection History -----------------------------------------------
-@router.get("/api/history", response_model=list[DetectionSession],
-            tags=["history"])
-def detection_history():
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+@router.get("/api/history", response_model=list[DetectionSession], tags=["history"])
+def detection_history(user: User = Depends(get_curr_user)):
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Not implemented yet"
+    )
 
 
-@router.get("/api/history/{session_id}", response_model=DetectionSessionDetail,
-            tags=["history"])
-def detection_history_detail(session_id: str):
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+@router.get("/api/history/{session_id}", response_model=DetectionSessionDetail, tags=["history"])
+def detection_history_detail(session_id: str, user: User = Depends(get_curr_user)):
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Not implemented yet"
+    )
