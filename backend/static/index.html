@@ -7,7 +7,7 @@
     <style>
         body {
             font-family: sans-serif;
-            max-width: 640px;
+            max-width: 720px;
             margin: 40px auto;
             padding: 20px;
             background: #111;
@@ -52,6 +52,24 @@
             background: #cc3344;
         }
 
+        .mode {
+            display: flex;
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .mode label {
+            background: #222;
+            padding: 10px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .mode input {
+            margin-right: 6px;
+        }
+
         #result {
             margin-top: 30px;
             padding: 30px;
@@ -75,19 +93,67 @@
             color: #f87171;
         }
 
+        #verdict.uncertain {
+            color: #facc15;
+        }
+
         #probs {
             font-size: 14px;
             color: #aaa;
+        }
+
+        #status {
+            font-size: 12px;
+            color: #888;
+            margin-top: 10px;
+            font-family: monospace;
         }
 
         #log {
             margin-top: 20px;
             font-size: 12px;
             color: #888;
-            max-height: 200px;
+            max-height: 240px;
             overflow-y: auto;
             font-family: monospace;
             white-space: pre-wrap;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .warn {
+            color: #f87171;
+            font-weight: bold;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            height: 6px;
+            background: #333;
+            border-radius: 3px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            background: #2b6cff;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            background: #2b6cff;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
         }
     </style>
 </head>
@@ -95,41 +161,79 @@
 <body>
     <h1>False Speech - Live Test</h1>
     <p class="hint">
-        Pick your monitor source (usually labeled "Monitor of ..."). Then click Start.
-        Play audio in any app. The verdict updates every 10 seconds.
+        Pick a capture mode. Mode A records any app playing audio (Linux monitor source).
+        Mode B records one browser tab's audio (works on Chromium-based browsers on any OS).
+        After starting, the log shows byte counts. If a chunk is under 10 KB, the source was silent.
     </p>
 
-    <select id="deviceSelect"></select>
+    <div class="mode">
+        <label><input type="radio" name="mode" value="monitor" checked> Mode A: System monitor</label>
+        <label><input type="radio" name="mode" value="tab"> Mode B: Browser tab</label>
+    </div>
+
+    <div id="monitorBox">
+        <select id="deviceSelect"></select>
+    </div>
+
+    <div style="margin-top: 18px;">
+        <label for="chunkSlider" style="font-size: 13px; color: #aaa;">
+            Chunk size: <span id="chunkLabel" style="color: #eee; font-weight: bold;">10</span>s
+        </label>
+        <input id="chunkSlider" type="range" min="1" max="15" step="1" value="10" style="width: 100%; margin-top: 6px;">
+    </div>
+
     <br>
     <button id="btn">Start</button>
 
     <div id="result">
         <div id="verdict">-</div>
         <div id="probs">Waiting for audio...</div>
+        <div id="status"></div>
     </div>
 
     <div id="log"></div>
 
     <script>
-        const CHUNK_MS = 10000;
         const WS_URL = `ws://${location.host}/ws/audio`;
+        const SILENCE_THRESHOLD_BYTES = 10000;
 
+        let chunkMs = 10000;
         let stream = null;
         let isCapturing = false;
         let chunkTimer = null;
+
         const btn = document.getElementById('btn');
         const deviceSelect = document.getElementById('deviceSelect');
+        const monitorBox = document.getElementById('monitorBox');
         const verdict = document.getElementById('verdict');
         const probs = document.getElementById('probs');
+        const status = document.getElementById('status');
         const logEl = document.getElementById('log');
+        const chunkSlider = document.getElementById('chunkSlider');
+        const chunkLabel = document.getElementById('chunkLabel');
 
         function log(msg) {
             const t = new Date().toLocaleTimeString();
             logEl.textContent = `[${t}] ${msg}\n` + logEl.textContent;
         }
 
+        function getMode() {
+            return document.querySelector('input[name="mode"]:checked').value;
+        }
+
+        document.querySelectorAll('input[name="mode"]').forEach(r => {
+            r.addEventListener('change', () => {
+                monitorBox.classList.toggle('hidden', getMode() !== 'monitor');
+            });
+        });
+
+        chunkSlider.addEventListener('input', () => {
+            chunkLabel.textContent = chunkSlider.value;
+            chunkMs = parseInt(chunkSlider.value, 10) * 1000;
+            log(`chunk size -> ${chunkSlider.value}s`);
+        });
+
         async function listDevices() {
-            // ask for permission once so labels are populated
             try {
                 const temp = await navigator.mediaDevices.getUserMedia({ audio: true });
                 temp.getTracks().forEach(t => t.stop());
@@ -147,36 +251,59 @@
             });
             log(`found ${audioInputs.length} audio inputs`);
 
-            // auto-select the first device whose label contains "monitor"
             const monitorOpt = Array.from(deviceSelect.options)
                 .find(o => o.textContent.toLowerCase().includes('monitor'));
             if (monitorOpt) {
                 deviceSelect.value = monitorOpt.value;
                 log('auto-selected: ' + monitorOpt.textContent);
-            } else {
-                log('no monitor device found. Pick one manually.');
             }
         }
 
-        async function start() {
+        async function startMonitor() {
             const deviceId = deviceSelect.value;
             if (!deviceId) { log('pick a device first'); return; }
+            stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    deviceId: { exact: deviceId },
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
+                },
+            });
+            const label = deviceSelect.options[deviceSelect.selectedIndex].textContent;
+            log('mode A - capturing from: ' + label);
+        }
+
+        async function startTab() {
+            const display = await navigator.mediaDevices.getDisplayMedia({
+                video: true,
+                audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
+                },
+            });
+            const audioTracks = display.getAudioTracks();
+            if (audioTracks.length === 0) {
+                log('mode B - NO AUDIO TRACK. Did you check "Share tab audio"?');
+                display.getTracks().forEach(t => t.stop());
+                throw new Error('no audio track');
+            }
+            display.getVideoTracks()[0].onended = () => { log('user stopped sharing'); stop(); };
+            stream = new MediaStream(audioTracks);
+            log('mode B - tab audio captured');
+        }
+
+        async function start() {
+            const mode = getMode();
             try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        deviceId: { exact: deviceId },
-                        echoCancellation: false,
-                        noiseSuppression: false,
-                        autoGainControl: false,
-                    },
-                });
+                if (mode === 'monitor') await startMonitor();
+                else await startTab();
             } catch (e) {
-                log('capture failed: ' + e.message);
+                log('start failed: ' + e.message);
+                stream = null;
                 return;
             }
-
-            const label = deviceSelect.options[deviceSelect.selectedIndex].textContent;
-            log('capturing from: ' + label);
 
             isCapturing = true;
             btn.textContent = 'Stop';
@@ -184,21 +311,31 @@
             verdict.textContent = '...';
             verdict.className = '';
             probs.textContent = 'capturing';
+            status.textContent = '';
 
             recordChunk();
-            chunkTimer = setInterval(recordChunk, CHUNK_MS + 500);
+            scheduleNextChunk();
         }
 
         function stop() {
             isCapturing = false;
-            if (chunkTimer) { clearInterval(chunkTimer); chunkTimer = null; }
+            if (chunkTimer) { clearTimeout(chunkTimer); chunkTimer = null; }
             if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
             btn.textContent = 'Start';
             btn.classList.remove('stop');
             verdict.textContent = '-';
             verdict.className = '';
             probs.textContent = 'stopped';
+            status.textContent = '';
             log('stopped');
+        }
+
+        function scheduleNextChunk() {
+            if (!isCapturing) return;
+            chunkTimer = setTimeout(() => {
+                recordChunk();
+                scheduleNextChunk();
+            }, chunkMs + 500);
         }
 
         function recordChunk() {
@@ -216,10 +353,14 @@
             recorder.start();
             setTimeout(() => {
                 if (recorder.state === 'recording') recorder.stop();
-            }, CHUNK_MS);
+            }, chunkMs);
         }
 
         function sendChunk(blob) {
+            const silent = blob.size < SILENCE_THRESHOLD_BYTES;
+            status.textContent = `chunk: ${blob.size} bytes` + (silent ? ' -- LIKELY SILENCE' : '');
+            status.className = silent ? 'warn' : '';
+
             const ws = new WebSocket(WS_URL);
             ws.binaryType = 'arraybuffer';
             ws.onopen = async () => {
@@ -231,11 +372,19 @@
                 try {
                     const data = JSON.parse(e.data);
                     if (data.error) { log('error: ' + data.error); return; }
-                    const isFake = data.is_fake;
-                    verdict.textContent = isFake ? 'FAKE' : 'REAL';
-                    verdict.className = isFake ? 'fake' : 'real';
-                    probs.textContent = `fake ${(data.fake_prob * 100).toFixed(1)}% / real ${(data.real_prob * 100).toFixed(1)}%`;
-                    log(`result: ${isFake ? 'FAKE' : 'REAL'}`);
+                    const fake = data.fake_prob;
+                    const real = data.real_prob;
+
+                    let label, cls;
+                    if (silent) { label = 'SILENT'; cls = 'uncertain'; }
+                    else if (real >= 0.70) { label = 'REAL'; cls = 'real'; }
+                    else if (fake >= 0.70) { label = 'FAKE'; cls = 'fake'; }
+                    else { label = 'UNCERTAIN'; cls = 'uncertain'; }
+
+                    verdict.textContent = label;
+                    verdict.className = cls;
+                    probs.textContent = `fake ${(fake * 100).toFixed(1)}% / real ${(real * 100).toFixed(1)}%`;
+                    log(`result: ${label} (fake=${fake.toFixed(3)}, ${blob.size} bytes)`);
                 } catch (err) {
                     log('parse error: ' + err.message);
                 } finally {
@@ -246,8 +395,6 @@
         }
 
         btn.addEventListener('click', () => { isCapturing ? stop() : start(); });
-
-        // populate devices on page load
         listDevices();
     </script>
 </body>
