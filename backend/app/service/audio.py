@@ -33,6 +33,9 @@ def preprocess_audio(audio_bytes: bytes, target_sr: int, device):
             always_2d=False,
         )
         wav = torch.from_numpy(wav_np)
+        if wav.numel() == 0 or wav.shape[0] < target_sr // 2:
+            logger.warning(f"audio too short: {wav.shape[0]} samples")
+            return None
 
         with torch.no_grad():
             wav = torch.nn.functional.layer_norm(wav, wav.shape)

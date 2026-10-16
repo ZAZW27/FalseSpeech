@@ -3,7 +3,11 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_curr_user
 from app.config import jwt_expires
-from app.db.models import User
+from app.db.models import (
+    User,
+    DetectionSessionRow,
+    DetectionSegmentRow,
+)
 from app.db.session import get_db
 from app.schemas import (
     HealthCheck,
@@ -13,11 +17,12 @@ from app.schemas import (
     Tier, UpgradeReq, UpgradeRes,
     DowngradeReq, DowngradeRes,
     Invoice,
-    DetectionSession, DetectionSessionDetail,
+    DetectionSession, DetectionSegment, DetectionSessionDetail,
 )
 from app.service import auth, inference
 
 router = APIRouter()
+
 
 # Helpers -----------------------------------------------
 def _user_pub(user: User) -> UserPub:
@@ -32,6 +37,7 @@ def _user_pub(user: User) -> UserPub:
         quota_reset_at=user.quota_reset_at,
     )
 
+
 # Health -----------------------------------------------
 @router.get("/", response_model=HealthCheck, tags=["health"])
 def health():
@@ -41,6 +47,7 @@ def health():
         model_loaded=inference.is_loaded(),
         device=str(device_used) if device_used else None,
     )
+
 
 # Auth -----------------------------------------------
 @router.post("/api/auth/register", response_model=RegisterRes, status_code=status.HTTP_201_CREATED, tags=["auth"])
@@ -81,6 +88,7 @@ def login(body: LoginReq, db: Session = Depends(get_db)):
 def logout(user: User = Depends(get_curr_user)):
     return None
 
+
 # User -----------------------------------------------
 @router.get("/api/users/me", response_model=UserPub, tags=["user"])
 def get_me(user: User = Depends(get_curr_user)):
@@ -89,10 +97,10 @@ def get_me(user: User = Depends(get_curr_user)):
 
 @router.patch("/api/users/me", response_model=UserPub, tags=["user"])
 def update_me(
-        body: UpdateProfileRequest,
-        user: User = Depends(get_curr_user),
-        db: Session = Depends(get_db),
-    ):
+    body: UpdateProfileRequest,
+    user: User = Depends(get_curr_user),
+    db: Session = Depends(get_db),
+):
     if body.name is not None:
         user.name = body.name
     if body.phone is not None:
@@ -101,47 +109,104 @@ def update_me(
     db.refresh(user)
     return _user_pub(user)
 
+
 # Tiers and Subscription -----------------------------------------------
 @router.get("/api/tiers", response_model=list[Tier], tags=["subscription"])
 def list_tiers():
     raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED, 
-        detail="Not implemented yet"
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Not implemented yet",
     )
+
 
 @router.post("/api/subscription/upgrade", response_model=UpgradeRes, tags=["subscription"])
 def upgrade(body: UpgradeReq, user: User = Depends(get_curr_user)):
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Not implemented yet"
+        detail="Not implemented yet",
     )
+
 
 @router.post("/api/subscription/downgrade", response_model=DowngradeRes, tags=["subscription"])
 def downgrade(body: DowngradeReq, user: User = Depends(get_curr_user)):
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Not implemented yet"
+        detail="Not implemented yet",
     )
 
-@router.get("/api/billing/history", response_model=list[Invoice], tags=["subscription"])
+
+@router.get("/api/billing/history", response_model=list[Invoice],
+            tags=["subscription"])
 def billing_history(user: User = Depends(get_curr_user)):
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Not implemented yet"
+        detail="Not implemented yet",
     )
+
 
 # Detection History -----------------------------------------------
 @router.get("/api/history", response_model=list[DetectionSession], tags=["history"])
-def detection_history(user: User = Depends(get_curr_user)):
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Not implemented yet"
+def detection_history(
+        user: User = Depends(get_curr_user),
+        db: Session = Depends(get_db),
+    ):
+    rows = (
+        db.query(DetectionSessionRow)
+        .filter(DetectionSessionRow.user_id == user.id)
+        .order_by(DetectionSessionRow.id.desc())
+        .limit(100)
+        .all()
     )
+    result = []
+    for r in rows:
+        total = (r.fake_count or 0) + (r.real_count or 0)
+        ratio = (r.fake_count / total) if total > 0 else 0.0
+        result.append(
+            DetectionSession(
+                session_id=str(r.id),
+                started_at=r.started_at,
+                duration=r.duration_s,
+                fake_ratio=ratio,
+                verdict=r.verdict,
+            )
+        )
+    return result
 
 
-@router.get("/api/history/{session_id}", response_model=DetectionSessionDetail, tags=["history"])
-def detection_history_detail(session_id: str, user: User = Depends(get_curr_user)):
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Not implemented yet"
+@router.get("/api/history/{session_id}", response_model=DetectionSessionDetail,tags=["history"])
+def detection_history_detail(
+        session_id: str,
+        user: User = Depends(get_curr_user),
+        db: Session = Depends(get_db),
+    ):
+    try:
+        sid = int(session_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Session tidak ditemukan")
+
+    row = (
+        db.query(DetectionSessionRow)
+        .filter(DetectionSessionRow.id == sid)
+        .filter(DetectionSessionRow.user_id == user.id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Session tidak ditemukan")
+
+    segs = (
+        db.query(DetectionSegmentRow)
+        .filter(DetectionSegmentRow.session_id == row.id)
+        .order_by(DetectionSegmentRow.offset_s.asc())
+        .all()
+    )
+    return DetectionSessionDetail(
+        session_id=str(row.id),
+        segments=[
+            DetectionSegment(
+                offset=s.offset_s,
+                is_fake=s.is_fake,
+                fake_prob=s.fake_prob,
+            )
+            for s in segs
+        ],
     )

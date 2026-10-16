@@ -25,7 +25,8 @@
         }
 
         select,
-        button {
+        button,
+        input[type="text"] {
             padding: 10px 16px;
             font-size: 14px;
             border-radius: 6px;
@@ -33,11 +34,13 @@
             margin-top: 12px;
         }
 
-        select {
+        select,
+        input[type="text"] {
             background: #222;
             color: #eee;
             border: 1px solid #444;
             min-width: 100%;
+            box-sizing: border-box;
         }
 
         button {
@@ -161,10 +164,11 @@
 <body>
     <h1>False Speech - Live Test</h1>
     <p class="hint">
-        Pick a capture mode. Mode A records any app playing audio (Linux monitor source).
-        Mode B records one browser tab's audio (works on Chromium-based browsers on any OS).
-        After starting, the log shows byte counts. If a chunk is under 10 KB, the source was silent.
+        Paste your JWT token below (from POST /api/auth/login). Then pick a capture mode and start.
     </p>
+
+    <input type="text" id="tokenInput" placeholder="JWT token">
+    <button id="saveTokenBtn" style="font-size: 13px; padding: 8px 16px;">Save Token</button>
 
     <div class="mode">
         <label><input type="radio" name="mode" value="monitor" checked> Mode A: System monitor</label>
@@ -194,13 +198,13 @@
     <div id="log"></div>
 
     <script>
-        const WS_URL = `ws://${location.host}/ws/audio`;
         const SILENCE_THRESHOLD_BYTES = 10000;
 
         let chunkMs = 10000;
         let stream = null;
         let isCapturing = false;
         let chunkTimer = null;
+        let token = localStorage.getItem('falsespeech_token') || '';
 
         const btn = document.getElementById('btn');
         const deviceSelect = document.getElementById('deviceSelect');
@@ -211,6 +215,16 @@
         const logEl = document.getElementById('log');
         const chunkSlider = document.getElementById('chunkSlider');
         const chunkLabel = document.getElementById('chunkLabel');
+        const tokenInput = document.getElementById('tokenInput');
+        const saveTokenBtn = document.getElementById('saveTokenBtn');
+
+        tokenInput.value = token;
+
+        saveTokenBtn.addEventListener('click', () => {
+            token = tokenInput.value.trim();
+            localStorage.setItem('falsespeech_token', token);
+            log('token saved, length ' + token.length);
+        });
 
         function log(msg) {
             const t = new Date().toLocaleTimeString();
@@ -250,9 +264,7 @@
                 deviceSelect.appendChild(opt);
             });
             log(`found ${audioInputs.length} audio inputs`);
-
-            const monitorOpt = Array.from(deviceSelect.options)
-                .find(o => o.textContent.toLowerCase().includes('monitor'));
+            const monitorOpt = Array.from(deviceSelect.options).find(o => o.textContent.toLowerCase().includes('monitor'));
             if (monitorOpt) {
                 deviceSelect.value = monitorOpt.value;
                 log('auto-selected: ' + monitorOpt.textContent);
@@ -263,25 +275,15 @@
             const deviceId = deviceSelect.value;
             if (!deviceId) { log('pick a device first'); return; }
             stream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    deviceId: { exact: deviceId },
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false,
-                },
+                audio: { deviceId: { exact: deviceId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
             });
-            const label = deviceSelect.options[deviceSelect.selectedIndex].textContent;
-            log('mode A - capturing from: ' + label);
+            log('mode A - capturing from: ' + deviceSelect.options[deviceSelect.selectedIndex].textContent);
         }
 
         async function startTab() {
             const display = await navigator.mediaDevices.getDisplayMedia({
                 video: true,
-                audio: {
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false,
-                },
+                audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
             });
             const audioTracks = display.getAudioTracks();
             if (audioTracks.length === 0) {
@@ -295,6 +297,7 @@
         }
 
         async function start() {
+            if (!token) { log('paste and save your JWT token first'); return; }
             const mode = getMode();
             try {
                 if (mode === 'monitor') await startMonitor();
@@ -304,7 +307,6 @@
                 stream = null;
                 return;
             }
-
             isCapturing = true;
             btn.textContent = 'Stop';
             btn.classList.add('stop');
@@ -312,7 +314,6 @@
             verdict.className = '';
             probs.textContent = 'capturing';
             status.textContent = '';
-
             recordChunk();
             scheduleNextChunk();
         }
@@ -351,9 +352,7 @@
                 sendChunk(blob);
             };
             recorder.start();
-            setTimeout(() => {
-                if (recorder.state === 'recording') recorder.stop();
-            }, chunkMs);
+            setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, chunkMs);
         }
 
         function sendChunk(blob) {
@@ -361,37 +360,38 @@
             status.textContent = `chunk: ${blob.size} bytes` + (silent ? ' -- LIKELY SILENCE' : '');
             status.className = silent ? 'warn' : '';
 
-            const ws = new WebSocket(WS_URL);
+            const wsUrl = `ws://${location.host}/ws/audio`;
+            const ws = new WebSocket(wsUrl, [], { headers: { Authorization: `Bearer ${token}` } });
             ws.binaryType = 'arraybuffer';
+
             ws.onopen = async () => {
                 log(`sending ${blob.size} bytes`);
                 const buf = await blob.arrayBuffer();
                 ws.send(buf);
             };
+
             ws.onmessage = (e) => {
                 try {
                     const data = JSON.parse(e.data);
                     if (data.error) { log('error: ' + data.error); return; }
-                    const fake = data.fake_prob;
-                    const real = data.real_prob;
-
+                    const fake = data.fek_prob;
+                    const real = data.ril_prob;
                     let label, cls;
                     if (silent) { label = 'SILENT'; cls = 'uncertain'; }
                     else if (real >= 0.70) { label = 'REAL'; cls = 'real'; }
                     else if (fake >= 0.70) { label = 'FAKE'; cls = 'fake'; }
                     else { label = 'UNCERTAIN'; cls = 'uncertain'; }
-
                     verdict.textContent = label;
                     verdict.className = cls;
                     probs.textContent = `fake ${(fake * 100).toFixed(1)}% / real ${(real * 100).toFixed(1)}%`;
-                    log(`result: ${label} (fake=${fake.toFixed(3)}, ${blob.size} bytes)`);
+                    log(`result: ${label} (fake=${fake.toFixed(3)}, session=${data.session_id}, quota=${data.quota_used}/${data.quota_limit})`);
                 } catch (err) {
                     log('parse error: ' + err.message);
                 } finally {
                     ws.close();
                 }
             };
-            ws.onerror = () => log('ws error');
+            ws.onerror = () => log('ws error (bad token?)');
         }
 
         btn.addEventListener('click', () => { isCapturing ? stop() : start(); });
