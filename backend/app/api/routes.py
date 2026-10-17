@@ -113,11 +113,51 @@ def update_me(
 # Tiers and Subscription -----------------------------------------------
 @router.get("/api/tiers", response_model=list[Tier], tags=["subscription"])
 def list_tiers():
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Not implemented yet",
-    )
-
+    return [
+        Tier(
+            id="free",
+            name="Free",
+            price="0",
+            quota_seconds_daily=600,
+            features=["live_detection_basic", "history_7d"],
+        ),
+        Tier(
+            id="pro",
+            name="Pro",
+            price="49000",
+            quota_seconds_daily=18000,
+            features=[
+                "live_detection_basic",
+                "confidence_score",
+                "history_30d",
+            ],
+        ),
+        Tier(
+            id="pro_max",
+            name="Pro Max",
+            price="99000",
+            quota_seconds_daily=43200,
+            features=[
+                "live_detection_basic",
+                "confidence_score",
+                "history_90d",
+                "android_widget",
+            ],
+        ),
+        Tier(
+            id="lifetime",
+            name="Lifetime",
+            price="2500000",    
+            quota_seconds_daily=0,
+            features=[
+                "live_detection_basic",
+                "confidence_score",
+                "history_unlimited",
+                "android_widget",
+                "fair_use_policy",
+            ],
+        ),
+    ]
 
 @router.post("/api/subscription/upgrade", response_model=UpgradeRes, tags=["subscription"])
 def upgrade(body: UpgradeReq, user: User = Depends(get_curr_user)):
