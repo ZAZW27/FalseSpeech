@@ -49,7 +49,7 @@ Requires Docker and Docker Compose installed.
 1. Clone the repository and enter the directory:
 
 ```bash
-git clone <this-repo-url>
+git clone https://github.com/ZAZW27/FalseSpeech.git
 cd FalseSpeech
 ```
 
