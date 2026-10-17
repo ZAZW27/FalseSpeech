@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>False Speech - History</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #111;
+            color: #eee;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin: 0;
+        }
+
+        .btn {
+            padding: 10px 16px;
+            font-size: 14px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            background: #2b6cff;
+            color: white;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn:hover {
+            background: #1a5be0;
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid #444;
+        }
+
+        .btn-outline:hover {
+            background: #222;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: #222;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        th,
+        td {
+            padding: 14px;
+            text-align: left;
+            border-bottom: 1px solid #333;
+            font-size: 14px;
+        }
+
+        th {
+            background: #1a1a1a;
+            color: #aaa;
+            font-weight: bold;
+        }
+
+        tr:hover {
+            background: #2a2a2a;
+        }
+
+        .verdict-real {
+            color: #4ade80;
+            font-weight: bold;
+        }
+
+        .verdict-fake {
+            color: #f87171;
+            font-weight: bold;
+        }
+
+        .verdict-mixed {
+            color: #facc15;
+            font-weight: bold;
+        }
+
+        .empty {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+            font-style: italic;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #2b6cff;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>Detection History</h1>
+        <div>
+            <a href="/static/index.html" class="btn btn-outline">Live Detection</a>
+            <button onclick="logout()" class="btn">Logout</button>
+        </div>
+    </div>
+
+    <a href="/static/index.html" class="back-link">← Kembali ke Live Detection</a>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Session ID</th>
+                <th>Waktu Mulai</th>
+                <th>Durasi (detik)</th>
+                <th>Rasio Fake</th>
+                <th>Keputusan</th>
+            </tr>
+        </thead>
+        <tbody id="history-body">
+            <tr>
+                <td colspan="5" class="empty">Memuat data...</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <script>
+        const token = localStorage.getItem('falsespeech_token');
+        if (!token) window.location.href = '/static/login.html';
+
+        function logout() {
+            localStorage.removeItem('falsespeech_token');
+            window.location.href = '/static/login.html';
+        }
+
+        async function loadHistory() {
+            const tbody = document.getElementById('history-body');
+            try {
+                const res = await fetch('/api/history', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!res.ok) throw new Error('Gagal mengambil data');
+
+                const data = await res.json();
+
+                if (data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="empty">Belum ada riwayat deteksi.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = '';
+                data.forEach(row => {
+                    const tr = document.createElement('tr');
+
+                    // Format time
+                    const date = new Date(row.started_at);
+                    const timeStr = date.toLocaleString('id-ID');
+
+                    // Format verdict class
+                    const vClass = row.verdict === 'fake' ? 'verdict-fake' :
+                        (row.verdict === 'mixed' ? 'verdict-mixed' : 'verdict-real');
+
+                    tr.innerHTML = `
+                        <td>#${row.session_id}</td>
+                        <td>${timeStr}</td>
+                        <td>${row.duration}</td>
+                        <td>${(row.fake_ratio * 100).toFixed(1)}%</td>
+                        <td class="${vClass}">${row.verdict.toUpperCase()}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="5" class="empty" style="color:#f87171;">Error: ${e.message}</td></tr>`;
+            }
+        }
+
+        loadHistory();
+    </script>
+</body>
+
+</html>

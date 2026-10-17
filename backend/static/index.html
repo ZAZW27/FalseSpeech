@@ -71,7 +71,7 @@
             margin-right: 6px;
         }
 
-        /* --- The Audio Visualizer --- */
+        /* Audio Visualizer */
         #viz-container {
             margin-top: 20px;
             height: 24px;
@@ -92,6 +92,7 @@
             background: #333;
         }
 
+        /* Main Result Box */
         #result {
             margin-top: 20px;
             padding: 30px;
@@ -131,14 +132,63 @@
             font-family: monospace;
         }
 
+        /* History Table */
+        #history-container {
+            margin-top: 30px;
+        }
+
+        #history-container h3 {
+            font-size: 14px;
+            color: #aaa;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .table-wrapper {
+            max-height: 250px;
+            overflow-y: auto;
+            border: 1px solid #333;
+            border-radius: 6px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            text-align: left;
+        }
+
+        th {
+            background: #222;
+            padding: 10px;
+            color: #aaa;
+            position: sticky;
+            top: 0;
+            border-bottom: 1px solid #444;
+        }
+
+        td {
+            padding: 10px;
+            border-bottom: 1px solid #2a2a2a;
+            font-family: monospace;
+        }
+
+        tr:hover {
+            background: #1a1a1a;
+        }
+
+        /* Developer Log */
         #log {
             margin-top: 20px;
             font-size: 12px;
-            color: #888;
-            max-height: 240px;
+            color: #666;
+            max-height: 150px;
             overflow-y: auto;
             font-family: monospace;
             white-space: pre-wrap;
+            border-top: 1px solid #333;
+            padding-top: 10px;
         }
 
         .hidden {
@@ -150,6 +200,22 @@
             font-weight: bold;
         }
 
+        .text-real {
+            color: #4ade80;
+            font-weight: bold;
+        }
+
+        .text-fake {
+            color: #f87171;
+            font-weight: bold;
+        }
+
+        .text-uncertain {
+            color: #facc15;
+            font-weight: bold;
+        }
+
+        /* Slider */
         input[type="range"] {
             -webkit-appearance: none;
             appearance: none;
@@ -183,11 +249,16 @@
 <body>
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <h1>False Speech - Live Detection</h1>
-        <button onclick="logout()" style="background: #444; padding: 8px 16px; font-size: 13px;">Logout</button>
+        <div>
+            <!-- TAMBAHKAN BARIS INI -->
+            <a href="/static/history.html"
+                style="background: #2b6cff; color: white; padding: 8px 16px; font-size: 13px; border-radius: 6px; text-decoration: none; margin-right: 8px;">History</a>
+            <button onclick="logout()" style="background: #444; padding: 8px 16px; font-size: 13px;">Logout</button>
+        </div>
     </div>
 
     <p class="hint">
-        Pick a capture mode and start. The green bar shows live audio volume. If it stays flat, the source is muted.
+        Pick a capture mode and start. The green bar shows live audio volume.
     </p>
 
     <div class="mode">
@@ -209,15 +280,37 @@
     <br>
     <button id="btn">Start</button>
 
-    <!-- THE VISUALIZER -->
+    <!-- Visualizer -->
     <div id="viz-container">
         <div id="viz-bar" class="silent"></div>
     </div>
 
+    <!-- Main Result -->
     <div id="result">
         <div id="verdict">-</div>
         <div id="probs">Waiting for audio...</div>
         <div id="status"></div>
+    </div>
+
+    <!-- Inference History Table -->
+    <div id="history-container" class="hidden">
+        <h3>Inference History</h3>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Chunk #</th>
+                        <th>Size</th>
+                        <th>Verdict</th>
+                        <th>Fake Prob</th>
+                    </tr>
+                </thead>
+                <tbody id="history-body">
+                    <!-- Rows injected by JS -->
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <div id="log"></div>
@@ -237,6 +330,7 @@
         let stream = null;
         let isCapturing = false;
         let chunkTimer = null;
+        let sessionStartTime = null;
 
         // Visualizer variables
         let audioCtx = null;
@@ -254,6 +348,10 @@
         const chunkSlider = document.getElementById('chunkSlider');
         const chunkLabel = document.getElementById('chunkLabel');
         const vizBar = document.getElementById('viz-bar');
+
+        // History DOM
+        const historyContainer = document.getElementById('history-container');
+        const historyBody = document.getElementById('history-body');
 
         function log(msg) {
             const t = new Date().toLocaleTimeString();
@@ -325,7 +423,7 @@
             log('mode B - tab audio captured');
         }
 
-        // --- Visualizer Setup ---
+        // Visualizer
         function startVisualizer(mediaStream) {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             analyser = audioCtx.createAnalyser();
@@ -338,19 +436,14 @@
             function draw() {
                 analyser.getByteFrequencyData(dataArray);
                 let sum = 0;
-                for (let i = 0; i < dataArray.length; i++) {
-                    sum += dataArray[i];
-                }
+                for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
                 const average = sum / dataArray.length;
-                // Calculate percentage (0 - 100)
                 const volume = Math.min(100, (average / 128) * 100 * 2);
 
                 vizBar.style.width = volume + '%';
-                if (volume < 5) {
-                    vizBar.classList.add('silent');
-                } else {
-                    vizBar.classList.remove('silent');
-                }
+                if (volume < 5) vizBar.classList.add('silent');
+                else vizBar.classList.remove('silent');
+
                 vizFrame = requestAnimationFrame(draw);
             }
             draw();
@@ -374,12 +467,17 @@
                 return;
             }
             isCapturing = true;
+            sessionStartTime = new Date();
             btn.textContent = 'Stop';
             btn.classList.add('stop');
             verdict.textContent = '...';
             verdict.className = '';
             probs.textContent = 'capturing';
             status.textContent = '';
+
+            // Clear history for new session
+            historyBody.innerHTML = '';
+            historyContainer.classList.remove('hidden');
 
             startVisualizer(stream);
             recordChunk();
@@ -424,6 +522,22 @@
             setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, chunkMs);
         }
 
+        function addToHistory(segmentIndex, size, label, prob) {
+            const row = document.createElement('tr');
+            const timeStr = new Date().toLocaleTimeString();
+            const colorClass = label.toLowerCase() === 'real' ? 'text-real' : (label.toLowerCase() === 'fake' ? 'text-fake' : 'text-uncertain');
+
+            row.innerHTML = `
+                <td>${timeStr}</td>
+                <td>#${segmentIndex || '?'}</td>
+                <td>${size.toLocaleString()} B</td>
+                <td class="${colorClass}">${label}</td>
+                <td>${(prob * 100).toFixed(1)}%</td>
+            `;
+            // Prepend to show newest at the top
+            historyBody.insertBefore(row, historyBody.firstChild);
+        }
+
         function sendChunk(blob) {
             const silent = blob.size < SILENCE_THRESHOLD_BYTES;
             status.textContent = `chunk: ${blob.size} bytes` + (silent ? ' -- LIKELY SILENCE' : '');
@@ -443,16 +557,21 @@
                 try {
                     const data = JSON.parse(e.data);
                     if (data.error) { log('error: ' + data.error); return; }
+
                     const fake = data.fek_prob;
                     const real = data.ril_prob;
                     let label, cls;
+
                     if (silent) { label = 'SILENT'; cls = 'uncertain'; }
                     else if (real >= 0.70) { label = 'REAL'; cls = 'real'; }
                     else if (fake >= 0.70) { label = 'FAKE'; cls = 'fake'; }
                     else { label = 'UNCERTAIN'; cls = 'uncertain'; }
+
                     verdict.textContent = label;
                     verdict.className = cls;
                     probs.textContent = `fake ${(fake * 100).toFixed(1)}% / real ${(real * 100).toFixed(1)}%`;
+
+                    addToHistory(data.segment_index, blob.size, label, fake);
                     log(`result: ${label} (fake=${fake.toFixed(3)}, session=${data.session_id}, quota=${data.quota_used}/${data.quota_limit})`);
                 } catch (err) {
                     log('parse error: ' + err.message);
@@ -460,7 +579,18 @@
                     ws.close();
                 }
             };
-            ws.onerror = () => log('ws error (bad token?)');
+
+            // NEW: Catch silent drops
+            ws.onerror = () => log('ws network error');
+            ws.onclose = (e) => {
+                if (e.code === 1008) {
+                    log('Session expired. Redirecting to login...');
+                    localStorage.removeItem('falsespeech_token');
+                    setTimeout(() => window.location.href = '/static/login.html', 1500);
+                } else if (e.code !== 1000 && e.code !== 1005) {
+                    log(`ws closed unexpectedly: Code ${e.code} - ${e.reason}`);
+                }
+            };
         }
 
         btn.addEventListener('click', () => { isCapturing ? stop() : start(); });

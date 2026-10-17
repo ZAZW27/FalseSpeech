@@ -1,6 +1,7 @@
 import json
 import logging
 from datetime import datetime, timezone
+import asyncio
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -111,7 +112,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 logger.info(f"user {user.id} hit quota, closing session {session_id}")
                 break
 
-            ril_prob, fek_prob = inference.inferencing(wav_tensor)
+            ril_prob, fek_prob = await asyncio.to_thread(inference.inferencing, wav_tensor)
             is_fake = fek_prob > 0.5
 
             total_audio_seconds += chunk_seconds

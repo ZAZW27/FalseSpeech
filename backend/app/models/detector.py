@@ -3,15 +3,26 @@ from huggingface_hub import PyTorchModelHubMixin
 from fairseq.models.wav2vec import Wav2Vec2Model, Wav2Vec2Config
 
 
-class ModelSSL(torch.nn.Module):
+class SSLModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
         cfg = Wav2Vec2Config(
-            encoder_layers=12,
-            encoder_embed_dim=768,
             quantize_targets=True,
-            latent_dim=256,
-            final_dim=256,
+            extractor_mode="layer_norm",
+            layer_norm_first=True,
+            final_dim=768,
+            latent_temp=(2.0, 0.1, 0.999995),
+            encoder_layerdrop=0.0,
+            dropout_input=0.0,
+            dropout_features=0.0,
+            dropout=0.0,
+            attention_dropout=0.0,
+            conv_bias=True,
+            encoder_layers=24,
+            encoder_embed_dim=1024,
+            encoder_ffn_embed_dim=4096,
+            encoder_attention_heads=16,
+            feature_grad_mult=1.0
         )
         self.model = Wav2Vec2Model(cfg)
 
@@ -27,9 +38,9 @@ class detectorDeepfake(torch.nn.Module, PyTorchModelHubMixin):
     def __init__(self, device="cpu"):
         super().__init__()
         self.device = device
-        self.ssl_orig_output_dim = 768
+        self.ssl_orig_output_dim = 1024  # Ganti dari 768 ke 1024
         self.num_classes = 2
-        self.m_ssl = ModelSSL()
+        self.m_ssl = SSLModel()
         self.adap_pool_1d = torch.nn.AdaptiveAvgPool1d(output_size=1)
         self.proj_fc = torch.nn.Linear(
             in_features=self.ssl_orig_output_dim,
