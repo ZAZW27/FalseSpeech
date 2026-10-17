@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>False Speech - Login</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: #111;
+            color: #eee;
+        }
+
+        .card {
+            background: #222;
+            padding: 40px;
+            border-radius: 8px;
+            width: 320px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+
+        h1 {
+            margin-top: 0;
+            font-size: 24px;
+            text-align: center;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            background: #333;
+            border: 1px solid #444;
+            color: white;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            margin-top: 16px;
+            background: #2b6cff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #1a5be0;
+        }
+
+        .toggle {
+            text-align: center;
+            margin-top: 16px;
+            font-size: 13px;
+            color: #aaa;
+            cursor: pointer;
+        }
+
+        .toggle:hover {
+            color: #fff;
+        }
+
+        #error {
+            color: #f87171;
+            font-size: 13px;
+            text-align: center;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <h1 id="title">Login</h1>
+
+        <div id="registerFields" class="hidden">
+            <input type="text" id="regName" placeholder="Full Name">
+            <input type="text" id="regPhone" placeholder="Phone Number">
+        </div>
+
+        <input type="email" id="email" placeholder="Email">
+        <input type="password" id="password" placeholder="Password">
+
+        <button id="submitBtn" onclick="submit()">Login</button>
+        <div id="error"></div>
+
+        <div class="toggle" id="toggleText" onclick="toggleMode()">Need an account? Register here</div>
+    </div>
+
+    <script>
+        let isLogin = true;
+
+        function toggleMode() {
+            isLogin = !isLogin;
+            document.getElementById('title').textContent = isLogin ? 'Login' : 'Register';
+            document.getElementById('submitBtn').textContent = isLogin ? 'Login' : 'Register';
+            document.getElementById('toggleText').textContent = isLogin ? 'Need an account? Register here' : 'Already have an account? Login here';
+            document.getElementById('registerFields').classList.toggle('hidden', isLogin);
+            document.getElementById('error').style.display = 'none';
+        }
+
+        async function submit() {
+            const err = document.getElementById('error');
+            err.style.display = 'none';
+
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            if (!email || !password) {
+                err.textContent = 'Email and password are required.';
+                err.style.display = 'block';
+                return;
+            }
+
+            const btn = document.getElementById('submitBtn');
+            btn.textContent = 'Please wait...';
+            btn.disabled = true;
+
+            try {
+                if (isLogin) {
+                    // Login flow
+                    const res = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email_or_phone: email, password: password })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || 'Login failed');
+
+                    localStorage.setItem('falsespeech_token', data.access_token);
+                    window.location.href = '/static/index.html';
+                } else {
+                    // Register flow
+                    const name = document.getElementById('regName').value;
+                    const phone = document.getElementById('regPhone').value;
+                    if (!name || !phone) throw new Error('All fields are required');
+
+                    const res = await fetch('/api/auth/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, email, phone, password })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || 'Registration failed');
+
+                    // Auto-switch to login
+                    alert('Registration successful! Please login.');
+                    toggleMode();
+                }
+            } catch (e) {
+                err.textContent = e.message;
+                err.style.display = 'block';
+            } finally {
+                btn.textContent = isLogin ? 'Login' : 'Register';
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+
+</html>

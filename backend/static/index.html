@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>False Speech - Live Test</title>
+    <title>False Speech - Live Detection</title>
     <style>
         body {
             font-family: sans-serif;
@@ -25,8 +25,7 @@
         }
 
         select,
-        button,
-        input[type="text"] {
+        button {
             padding: 10px 16px;
             font-size: 14px;
             border-radius: 6px;
@@ -34,8 +33,7 @@
             margin-top: 12px;
         }
 
-        select,
-        input[type="text"] {
+        select {
             background: #222;
             color: #eee;
             border: 1px solid #444;
@@ -73,8 +71,29 @@
             margin-right: 6px;
         }
 
+        /* --- The Audio Visualizer --- */
+        #viz-container {
+            margin-top: 20px;
+            height: 24px;
+            background: #222;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #333;
+        }
+
+        #viz-bar {
+            height: 100%;
+            width: 0%;
+            background: #4ade80;
+            transition: width 0.05s ease-out;
+        }
+
+        #viz-bar.silent {
+            background: #333;
+        }
+
         #result {
-            margin-top: 30px;
+            margin-top: 20px;
             padding: 30px;
             text-align: center;
             border-radius: 8px;
@@ -162,13 +181,14 @@
 </head>
 
 <body>
-    <h1>False Speech - Live Test</h1>
-    <p class="hint">
-        Paste your JWT token below (from POST /api/auth/login). Then pick a capture mode and start.
-    </p>
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h1>False Speech - Live Detection</h1>
+        <button onclick="logout()" style="background: #444; padding: 8px 16px; font-size: 13px;">Logout</button>
+    </div>
 
-    <input type="text" id="tokenInput" placeholder="JWT token">
-    <button id="saveTokenBtn" style="font-size: 13px; padding: 8px 16px;">Save Token</button>
+    <p class="hint">
+        Pick a capture mode and start. The green bar shows live audio volume. If it stays flat, the source is muted.
+    </p>
 
     <div class="mode">
         <label><input type="radio" name="mode" value="monitor" checked> Mode A: System monitor</label>
@@ -189,6 +209,11 @@
     <br>
     <button id="btn">Start</button>
 
+    <!-- THE VISUALIZER -->
+    <div id="viz-container">
+        <div id="viz-bar" class="silent"></div>
+    </div>
+
     <div id="result">
         <div id="verdict">-</div>
         <div id="probs">Waiting for audio...</div>
@@ -198,13 +223,26 @@
     <div id="log"></div>
 
     <script>
-        const SILENCE_THRESHOLD_BYTES = 10000;
+        const token = localStorage.getItem('falsespeech_token');
+        if (!token) window.location.href = '/static/login.html';
 
+        function logout() {
+            localStorage.removeItem('falsespeech_token');
+            window.location.href = '/static/login.html';
+        }
+
+        const SILENCE_THRESHOLD_BYTES = 10000;
         let chunkMs = 10000;
+
         let stream = null;
         let isCapturing = false;
         let chunkTimer = null;
-        let token = localStorage.getItem('falsespeech_token') || '';
+
+        // Visualizer variables
+        let audioCtx = null;
+        let analyser = null;
+        let source = null;
+        let vizFrame = null;
 
         const btn = document.getElementById('btn');
         const deviceSelect = document.getElementById('deviceSelect');
@@ -215,16 +253,7 @@
         const logEl = document.getElementById('log');
         const chunkSlider = document.getElementById('chunkSlider');
         const chunkLabel = document.getElementById('chunkLabel');
-        const tokenInput = document.getElementById('tokenInput');
-        const saveTokenBtn = document.getElementById('saveTokenBtn');
-
-        tokenInput.value = token;
-
-        saveTokenBtn.addEventListener('click', () => {
-            token = tokenInput.value.trim();
-            localStorage.setItem('falsespeech_token', token);
-            log('token saved, length ' + token.length);
-        });
+        const vizBar = document.getElementById('viz-bar');
 
         function log(msg) {
             const t = new Date().toLocaleTimeString();
@@ -296,8 +325,45 @@
             log('mode B - tab audio captured');
         }
 
+        // --- Visualizer Setup ---
+        function startVisualizer(mediaStream) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 256;
+            source = audioCtx.createMediaStreamSource(mediaStream);
+            source.connect(analyser);
+
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+            function draw() {
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < dataArray.length; i++) {
+                    sum += dataArray[i];
+                }
+                const average = sum / dataArray.length;
+                // Calculate percentage (0 - 100)
+                const volume = Math.min(100, (average / 128) * 100 * 2);
+
+                vizBar.style.width = volume + '%';
+                if (volume < 5) {
+                    vizBar.classList.add('silent');
+                } else {
+                    vizBar.classList.remove('silent');
+                }
+                vizFrame = requestAnimationFrame(draw);
+            }
+            draw();
+        }
+
+        function stopVisualizer() {
+            if (vizFrame) cancelAnimationFrame(vizFrame);
+            if (audioCtx) audioCtx.close();
+            vizBar.style.width = '0%';
+            vizBar.classList.add('silent');
+        }
+
         async function start() {
-            if (!token) { log('paste and save your JWT token first'); return; }
             const mode = getMode();
             try {
                 if (mode === 'monitor') await startMonitor();
@@ -314,6 +380,8 @@
             verdict.className = '';
             probs.textContent = 'capturing';
             status.textContent = '';
+
+            startVisualizer(stream);
             recordChunk();
             scheduleNextChunk();
         }
@@ -322,6 +390,7 @@
             isCapturing = false;
             if (chunkTimer) { clearTimeout(chunkTimer); chunkTimer = null; }
             if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+            stopVisualizer();
             btn.textContent = 'Start';
             btn.classList.remove('stop');
             verdict.textContent = '-';
@@ -360,8 +429,8 @@
             status.textContent = `chunk: ${blob.size} bytes` + (silent ? ' -- LIKELY SILENCE' : '');
             status.className = silent ? 'warn' : '';
 
-            const wsUrl = `ws://${location.host}/ws/audio`;
-            const ws = new WebSocket(wsUrl, [], { headers: { Authorization: `Bearer ${token}` } });
+            const wsUrl = `ws://${location.host}/ws/audio?token=${encodeURIComponent(token)}`;
+            const ws = new WebSocket(wsUrl);
             ws.binaryType = 'arraybuffer';
 
             ws.onopen = async () => {
@@ -395,7 +464,7 @@
         }
 
         btn.addEventListener('click', () => { isCapturing ? stop() : start(); });
-        listDevices();
+        if (token) listDevices();
     </script>
 </body>
 
