@@ -104,6 +104,17 @@ async def websocket_endpoint(websocket: WebSocket):
             chunk_seconds = wav_tensor.shape[1] / target_sr
             would_be_used = user.quota_used + int(total_audio_seconds + chunk_seconds)
 
+            # --- FAIR USAGE POLICY CHECK (LIFETIME) ---
+            if user.tier == 'lifetime' and would_be_used > 43200:
+                await websocket.send_text(json.dumps({
+                    "error": "Fair Usage Policy exceeded. Lifetime users are limited to 12 hours of continuous listening per day.",
+                    "quota_used": user.quota_used + int(total_audio_seconds),
+                    "quota_limit": 43200,
+                }))
+                logger.info(f"Lifetime user {user.id} hit FUP limit (43200s), closing session {session_id}")
+                break
+            # ------------------------------------------
+
             if would_be_used > user.quota_limit:
                 await websocket.send_text(json.dumps({
                     "error": "quota exceeded",

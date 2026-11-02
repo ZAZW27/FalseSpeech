@@ -1,17 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import LandingLayout from '@/components/layout/LandingLayout.vue'
-
-// Pages are lazy loaded. The layout is small and always needed for '/', so it is imported directly.
 const LandingPage = () => import('@/pages/landing/page.vue')
 const DetailPage = () => import('@/pages/detail/page.vue')
 const LoginPage = () => import('@/pages/login/page.vue')
 const RegisterPage = () => import('@/pages/register/page.vue')
 const DashboardPage = () => import('@/pages/dashboard/page.vue')
 const HistoryPage = () => import('@/pages/history/page.vue')
+const ProfilePage = () => import('@/pages/profile/page.vue')
 
 const routes = [
-  // Landing group: header, footer and listening modal come from LandingLayout.
-  // Home, about, subscription and contact render the same one-page landing and scroll to meta.section.
   {
     path: '/',
     component: LandingLayout,
@@ -35,6 +32,7 @@ const routes = [
   { path: '/register', name: 'register', component: RegisterPage, meta: { title: 'Sign up' } },
   { path: '/dashboard', name: 'dashboard', component: DashboardPage, meta: { title: 'Dashboard' } },
   { path: '/history', name: 'history', component: HistoryPage, meta: { title: 'History' } },
+  { path: '/profile', name: 'profile', component: ProfilePage, meta: { title: 'Profile' } },
 ]
 
 const router = createRouter({

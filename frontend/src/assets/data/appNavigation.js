@@ -2,6 +2,5 @@
 export const appLinks = [
   { label: 'Dashboard', to: '/dashboard', icon: 'dashboard' },
   { label: 'History', to: '/history', icon: 'history' },
-  // '/plan' avoids a clash with the landing page '#subscription' section.
   { label: 'Subscription', to: '/plan', icon: 'card' },
 ]
