@@ -1,188 +1,353 @@
-import { computed, onBeforeUnmount, ref } from 'vue'
-import { WS_BASE, getToken } from '@/assets/js/api'
+import { onBeforeUnmount, onMounted, ref, watch, computed } from 'vue'
+import { WS_BASE, clearToken, getToken } from '@/assets/js/api'
 
-// Each recorded segment is a complete, self-contained webm/opus file, so the backend
-// can decode every blob on its own. Change this if the backend expects a continuous stream.
-const SEGMENT_MS = 3000
+// Ported from the legacy HTML/JS detector.
+const SILENCE_THRESHOLD_BYTES = 10000 // blobs smaller than this are flagged as silence
+const VERDICT_THRESHOLD = 0.7
+const CHUNK_GRACE_MS = 500 // extra wait between chunks, same as legacy
+const SILENT_VOLUME = 5 // visualizer volume (0-100) under which the bar is gray
 const MAX_LOGS = 200
-// If neither probability reaches this value, the verdict is UNCERTAIN.
-const UNCERTAIN_BELOW = 0.6
-const MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm']
+const MAX_HISTORY = 100
+const EXPIRED_REDIRECT_MS = 1500
 
-// WS result -> 'REAL' | 'FAKE' | 'UNCERTAIN' | null
-export const getVerdict = (result) => {
-  if (!result) return null
-  const fake = Number(result.fek_prob) || 0
-  const real = Number(result.ril_prob) || 0
-  if (Math.max(fake, real) < UNCERTAIN_BELOW) return 'UNCERTAIN'
-  return result.is_fek ? 'FAKE' : 'REAL'
+const NO_PROCESSING = { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+
+// real/fake probabilities -> label and tone. Same order as the legacy code.
+export const classifyChunk = ({ silent, real, fake }) => {
+  if (silent) return { label: 'SILENT', tone: 'uncertain' }
+  if (real >= VERDICT_THRESHOLD) return { label: 'REAL', tone: 'real' }
+  if (fake >= VERDICT_THRESHOLD) return { label: 'FAKE', tone: 'fake' }
+  return { label: 'UNCERTAIN', tone: 'uncertain' }
 }
 
-const percent = (value) => `${Math.round((Number(value) || 0) * 100)}%`
-
-export function useAudioCapture() {
-  // 'idle' | 'connecting' | 'listening'
-  const status = ref('idle')
-  const currentResult = ref(null)
-  const liveLogs = ref([])
+// options.onQuota(used, limit): called when the server reports quota.
+// options.onSessionExpired(): called after the server closes with code 1008.
+export function useAudioCapture(options = {}) {
+  // Public state
+  const isListening = ref(false)
+  const currentResult = ref(null) // { label, tone, fake, real, silent, size, segmentIndex }
+  const liveLogs = ref([]) // { id, time, text, tone: 'fake' | 'real' | 'warn' | 'muted' }
+  const history = ref([]) // live inference history, newest first
+  const devices = ref([]) // { deviceId, label }
+  const selectedDevice = ref('')
+  const mode = ref('monitor') // 'monitor' (Mode A) | 'tab' (Mode B)
+  const chunkSize = ref(10) // seconds, 1 to 15
+  const volume = ref(0) // 0 to 100
+  const statusText = ref('')
+  const statusWarn = ref(false)
   const errorMessage = ref('')
 
-  const isListening = computed(() => status.value !== 'idle')
-  const verdict = computed(() => getVerdict(currentResult.value))
+  const hasAudio = computed(() => volume.value >= SILENT_VOLUME)
+  const verdict = computed(() => currentResult.value?.label ?? null)
 
-  let socket = null
-  let stream = null
-  let recorder = null
-  let segmentTimer = null
-  let onQuota = null
+  // Internal state
+  let stream = null // audio only stream used for recording
+  let displayStream = null // full getDisplayMedia stream, kept so its video track can be stopped
+  let chunkTimer = null
+  let sessionId = 0 // bumped on start and stop, so late results from old sessions are ignored
+  let isStarting = false
   let logId = 0
-  let wanted = false
+  let audioCtx = null
+  let analyser = null
+  let source = null
+  let vizFrame = null
 
   const pushLog = (text, tone = 'muted') => {
-    liveLogs.value.push({
-      id: ++logId,
-      time: new Date().toLocaleTimeString([], { hour12: false }),
-      text,
-      tone,
+    liveLogs.value.push({ id: ++logId, time: new Date().toLocaleTimeString(), text, tone })
+    if (liveLogs.value.length > MAX_LOGS) liveLogs.value.splice(0, liveLogs.value.length - MAX_LOGS)
+  }
+
+  // The slider can change at any time. The next chunk uses the new value.
+  watch(chunkSize, (value) => pushLog(`chunk size -> ${value}s`))
+
+  // ---------- Devices (Mode A) ----------
+  const refreshDevices = async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return
+
+    // Labels are empty until the user grants microphone permission once.
+    try {
+      const temp = await navigator.mediaDevices.getUserMedia({ audio: true })
+      temp.getTracks().forEach((track) => track.stop())
+    } catch (error) {
+      pushLog(`mic permission denied: ${error.message}`, 'warn')
+    }
+
+    const all = await navigator.mediaDevices.enumerateDevices()
+    devices.value = all
+      .filter((device) => device.kind === 'audioinput')
+      .map((device) => ({
+        deviceId: device.deviceId,
+        label: device.label || `Input ${device.deviceId.slice(0, 8)}`,
+      }))
+    pushLog(`found ${devices.value.length} audio inputs`)
+
+    const monitor = devices.value.find((device) => device.label.toLowerCase().includes('monitor'))
+    if (monitor) {
+      selectedDevice.value = monitor.deviceId
+      pushLog(`auto-selected: ${monitor.label}`)
+    } else if (!devices.value.some((device) => device.deviceId === selectedDevice.value)) {
+      selectedDevice.value = devices.value[0]?.deviceId ?? ''
+    }
+  }
+
+  // ---------- Capture modes ----------
+  const openMonitor = async () => {
+    if (!selectedDevice.value) throw new Error('Pick a device first.')
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { deviceId: { exact: selectedDevice.value }, ...NO_PROCESSING },
     })
-    if (liveLogs.value.length > MAX_LOGS) {
-      liveLogs.value.splice(0, liveLogs.value.length - MAX_LOGS)
-    }
+    const label = devices.value.find((device) => device.deviceId === selectedDevice.value)?.label
+    pushLog(`mode A - capturing from: ${label ?? selectedDevice.value}`)
   }
 
-  // Safe to call more than once.
-  const teardown = () => {
-    wanted = false
-    clearTimeout(segmentTimer)
-    segmentTimer = null
+  const openTab = async () => {
+    const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: NO_PROCESSING })
+    const audioTracks = display.getAudioTracks()
 
-    if (recorder) {
-      recorder.onstop = null
-      recorder.ondataavailable = null
-      if (recorder.state !== 'inactive') recorder.stop()
-      recorder = null
+    if (audioTracks.length === 0) {
+      pushLog('mode B - NO AUDIO TRACK. Did you check "Share tab audio"?', 'warn')
+      display.getTracks().forEach((track) => track.stop())
+      throw new Error('No audio track. Enable "Share tab audio" when choosing the tab.')
     }
 
-    if (stream) {
-      stream.getTracks().forEach((track) => track.stop())
-      stream = null
+    displayStream = display
+    display.getVideoTracks()[0].onended = () => {
+      pushLog('user stopped sharing')
+      stopCapture()
     }
-
-    if (socket) {
-      socket.onopen = null
-      socket.onmessage = null
-      socket.onerror = null
-      socket.onclose = null
-      if (socket.readyState < WebSocket.CLOSING) socket.close()
-      socket = null
-    }
-
-    status.value = 'idle'
+    stream = new MediaStream(audioTracks)
+    pushLog('mode B - tab audio captured')
   }
 
-  const recordSegment = () => {
-    if (!wanted || !stream) return
+  // ---------- Visualizer ----------
+  const startVisualizer = (mediaStream) => {
+    const Context = window.AudioContext || window.webkitAudioContext
+    if (!Context) return
 
-    const mimeType = MIME_TYPES.find((type) => MediaRecorder.isTypeSupported(type))
-    recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+    audioCtx = new Context()
+    analyser = audioCtx.createAnalyser()
+    analyser.fftSize = 256
+    source = audioCtx.createMediaStreamSource(mediaStream)
+    source.connect(analyser)
 
+    const data = new Uint8Array(analyser.frequencyBinCount)
+    const draw = () => {
+      analyser.getByteFrequencyData(data)
+      let sum = 0
+      for (let i = 0; i < data.length; i++) sum += data[i]
+      const average = sum / data.length
+      volume.value = Math.min(100, (average / 128) * 100 * 2)
+      vizFrame = requestAnimationFrame(draw)
+    }
+    draw()
+  }
+
+  const stopVisualizer = () => {
+    if (vizFrame) cancelAnimationFrame(vizFrame)
+    vizFrame = null
+    source?.disconnect()
+    source = null
+    analyser = null
+    if (audioCtx) audioCtx.close().catch(() => {})
+    audioCtx = null
+    volume.value = 0
+  }
+
+  // ---------- Chunks ----------
+  const recordChunk = () => {
+    if (!isListening.value || !stream) return
+
+    const currentSession = sessionId
+    const chunks = []
+    let mime = 'audio/webm'
+    if (!MediaRecorder.isTypeSupported(mime)) mime = ''
+
+    const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
     recorder.ondataavailable = (event) => {
-      if (event.data.size > 0 && socket?.readyState === WebSocket.OPEN) {
-        socket.send(event.data)
-      }
+      if (event.data.size > 0) chunks.push(event.data)
     }
-    // When a segment ends, start the next one right away.
     recorder.onstop = () => {
-      if (wanted) recordSegment()
+      // A stopped session never sends its last partial chunk.
+      if (currentSession !== sessionId) return
+      if (chunks.length === 0) {
+        pushLog('empty chunk', 'warn')
+        return
+      }
+      sendChunk(new Blob(chunks, { type: mime || 'audio/webm' }), currentSession)
     }
 
     recorder.start()
-    segmentTimer = setTimeout(() => {
-      if (recorder?.state === 'recording') recorder.stop()
-    }, SEGMENT_MS)
+    setTimeout(() => {
+      if (recorder.state === 'recording') recorder.stop()
+    }, chunkSize.value * 1000)
   }
 
-  const handleMessage = (event) => {
-    let data
-    try {
-      data = JSON.parse(event.data)
-    } catch {
-      pushLog('Received an unreadable message from the server.', 'muted')
-      return
+  const scheduleNextChunk = () => {
+    if (!isListening.value) return
+    chunkTimer = setTimeout(() => {
+      recordChunk()
+      scheduleNextChunk()
+    }, chunkSize.value * 1000 + CHUNK_GRACE_MS)
+  }
+
+  // One WebSocket per chunk: connect, send the blob, read one result, close.
+  const sendChunk = (blob, currentSession) => {
+    const silent = blob.size < SILENCE_THRESHOLD_BYTES
+    statusText.value = `chunk: ${blob.size} bytes${silent ? ' -- LIKELY SILENCE' : ''}`
+    statusWarn.value = silent
+
+    const ws = new WebSocket(`${WS_BASE}/ws/audio?token=${encodeURIComponent(getToken() ?? '')}`)
+    ws.binaryType = 'arraybuffer'
+
+    ws.onopen = async () => {
+      pushLog(`sending ${blob.size} bytes`)
+      ws.send(await blob.arrayBuffer())
     }
 
-    currentResult.value = data
-    const label = getVerdict(data)
-    pushLog(
-      `seg ${data.segment_index ?? '-'}  ${label}  fake ${percent(data.fek_prob)}  real ${percent(data.ril_prob)}`,
-      label === 'FAKE' ? 'fake' : label === 'REAL' ? 'real' : 'muted',
-    )
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (currentSession !== sessionId) return // session was stopped meanwhile
 
-    if (data.quota_used != null && onQuota) onQuota(data.quota_used, data.quota_limit)
+        if (data.error) {
+          pushLog(`error: ${data.error}`, 'warn')
+          return
+        }
+
+        const fake = Number(data.fek_prob) || 0
+        const real = Number(data.ril_prob) || 0
+        const { label, tone } = classifyChunk({ silent, real, fake })
+
+        currentResult.value = { label, tone, fake, real, silent, size: blob.size, segmentIndex: data.segment_index }
+        history.value.unshift({
+          id: `${data.session_id ?? 's'}-${data.segment_index ?? Date.now()}-${blob.size}`,
+          time: new Date().toLocaleTimeString(),
+          chunk: data.segment_index ?? '?',
+          size: blob.size,
+          label,
+          tone,
+          fake,
+        })
+        if (history.value.length > MAX_HISTORY) history.value.length = MAX_HISTORY
+
+        pushLog(
+          `result: ${label} (fake=${fake.toFixed(3)}, session=${data.session_id}, quota=${data.quota_used}/${data.quota_limit})`,
+          tone === 'uncertain' ? 'warn' : tone,
+        )
+
+        if (data.quota_used != null) options.onQuota?.(data.quota_used, data.quota_limit)
+      } catch (error) {
+        pushLog(`parse error: ${error.message}`, 'warn')
+      } finally {
+        ws.close()
+      }
+    }
+
+    ws.onerror = () => pushLog('ws network error', 'warn')
+    ws.onclose = (event) => {
+      if (event.code === 1008) {
+        pushLog('Session expired. Redirecting to login...', 'warn')
+        clearToken()
+        stopCapture()
+        setTimeout(() => options.onSessionExpired?.(), EXPIRED_REDIRECT_MS)
+      } else if (event.code !== 1000 && event.code !== 1005) {
+        pushLog(`ws closed unexpectedly: Code ${event.code} - ${event.reason}`, 'warn')
+      }
+    }
   }
 
-  // options.onQuota(used, limit) is called whenever the server reports quota.
-  const start = async (options = {}) => {
-    if (status.value !== 'idle') return
+  // ---------- Start and stop ----------
+  const releaseStreams = () => {
+    stream?.getTracks().forEach((track) => track.stop())
+    displayStream?.getTracks().forEach((track) => track.stop())
+    stream = null
+    displayStream = null
+  }
 
-    const token = getToken()
-    if (!token) {
+  const readableError = (error) => {
+    if (error?.name === 'NotAllowedError') return 'Permission was denied or the share was cancelled.'
+    if (error?.name === 'NotFoundError') return 'The selected audio device was not found.'
+    return error?.message || 'Could not start capture.'
+  }
+
+  const startCapture = async () => {
+    if (isListening.value || isStarting) return
+    if (!getToken()) {
       errorMessage.value = 'You are not logged in.'
       return
     }
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+    if (!navigator.mediaDevices) {
       errorMessage.value = 'This browser does not support audio capture.'
       return
     }
 
+    isStarting = true
     errorMessage.value = ''
-    currentResult.value = null
-    liveLogs.value = []
-    onQuota = options.onQuota ?? null
-    wanted = true
-    status.value = 'connecting'
 
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    } catch {
-      teardown()
-      errorMessage.value = 'Microphone access was denied. Allow it in your browser settings and try again.'
+      if (mode.value === 'monitor') await openMonitor()
+      else await openTab()
+    } catch (error) {
+      pushLog(`start failed: ${error.message}`, 'warn')
+      errorMessage.value = readableError(error)
+      releaseStreams()
+      isStarting = false
       return
     }
 
-    // The user may have pressed stop while the permission prompt was open.
-    if (!wanted) {
-      teardown()
-      return
-    }
+    isStarting = false
+    sessionId += 1
+    isListening.value = true
+    currentResult.value = null
+    history.value = [] // new session starts with an empty history
+    statusText.value = ''
+    statusWarn.value = false
 
-    pushLog('Connecting...', 'muted')
-    socket = new WebSocket(`${WS_BASE}/ws/audio?token=${encodeURIComponent(token)}`)
-
-    socket.onopen = () => {
-      status.value = 'listening'
-      pushLog('Connected. Listening...', 'muted')
-      recordSegment()
-    }
-    socket.onmessage = handleMessage
-    socket.onerror = () => {
-      errorMessage.value = 'Connection error. Please try again.'
-    }
-    socket.onclose = () => {
-      if (!wanted) return
-      if (!errorMessage.value) errorMessage.value = 'The connection was closed by the server.'
-      pushLog('Connection closed.', 'muted')
-      teardown()
-    }
+    startVisualizer(stream)
+    recordChunk()
+    scheduleNextChunk()
   }
 
-  const stop = () => {
-    if (status.value === 'idle') return
-    pushLog('Stopped.', 'muted')
-    teardown()
+  function stopCapture() {
+    if (!isListening.value) return
+    isListening.value = false
+    sessionId += 1
+    clearTimeout(chunkTimer)
+    chunkTimer = null
+    releaseStreams()
+    stopVisualizer()
+    statusText.value = ''
+    statusWarn.value = false
+    pushLog('stopped')
   }
 
-  onBeforeUnmount(teardown)
+  onMounted(() => {
+    refreshDevices()
+    navigator.mediaDevices?.addEventListener?.('devicechange', refreshDevices)
+  })
 
-  return { status, isListening, currentResult, verdict, liveLogs, errorMessage, start, stop }
+  onBeforeUnmount(() => {
+    navigator.mediaDevices?.removeEventListener?.('devicechange', refreshDevices)
+    stopCapture()
+  })
+
+  return {
+    isListening,
+    currentResult,
+    liveLogs,
+    history,
+    devices,
+    selectedDevice,
+    mode,
+    chunkSize,
+    volume,
+    hasAudio,
+    verdict,
+    statusText,
+    statusWarn,
+    errorMessage,
+    refreshDevices,
+    startCapture,
+    stopCapture,
+  }
 }

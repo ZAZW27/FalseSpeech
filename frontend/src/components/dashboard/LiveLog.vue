@@ -21,6 +21,7 @@ watch(
 const toneClass = {
   fake: 'text-danger',
   real: 'text-brand-green',
+  warn: 'text-yellow-400',
   muted: 'text-slate-400',
 }
 </script>

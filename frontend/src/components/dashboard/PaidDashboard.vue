@@ -1,57 +1,70 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { authFetch } from '@/assets/js/api'
 import { summarizeHistory } from '@/assets/js/historyStats'
 import { useAudioCapture } from '@/assets/js/useAudioCapture'
 import PlayButton from '@/components/ui/buttons/PlayButton.vue'
-import VerticalConfidence from '@/components/dashboard/VerticalConfidence.vue'
+import CaptureControls from '@/components/dashboard/CaptureControls.vue'
+import VolumeMeter from '@/components/dashboard/VolumeMeter.vue'
+import VerdictDisplay from '@/components/dashboard/VerdictDisplay.vue'
 import LiveLog from '@/components/dashboard/LiveLog.vue'
 import StatsRow from '@/components/dashboard/StatsRow.vue'
 import ActivityChart from '@/components/dashboard/ActivityChart.vue'
-import RecentDetections from '@/components/dashboard/RecentDetections.vue'
+import LiveHistoryTable from '@/components/dashboard/LiveHistoryTable.vue'
 
-// Scenario B: paid users. user comes from AppLayout (GET /api/users/me).
+// Scenario B: paid users get everything. user comes from AppLayout (GET /api/users/me).
 const props = defineProps({
   user: { type: Object, required: true },
   updateQuota: { type: Function, required: true },
 })
 
-const { status, isListening, currentResult, liveLogs, errorMessage, start, stop } = useAudioCapture()
+const router = useRouter()
 
-const history = ref([])
-const historyLoading = ref(true)
-const historyError = ref('')
+const {
+  isListening,
+  currentResult,
+  liveLogs,
+  history: liveHistory,
+  devices,
+  selectedDevice,
+  mode,
+  chunkSize,
+  volume,
+  statusText,
+  statusWarn,
+  errorMessage,
+  startCapture,
+  stopCapture,
+} = useAudioCapture({
+  onQuota: props.updateQuota,
+  onSessionExpired: () => router.replace('/login'),
+})
 
-// GET /api/history -> [{ session_id, started_at, duration, fake_ratio, verdict }]
-const loadHistory = async () => {
-  historyError.value = ''
+// Saved sessions from GET /api/history feed the stats row and the weekly chart.
+const savedHistory = ref([])
+
+const loadSavedHistory = async () => {
   try {
     const response = await authFetch('/api/history')
     if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
     const data = await response.json()
-    history.value = Array.isArray(data) ? data : []
+    savedHistory.value = Array.isArray(data) ? data : []
   } catch {
-    historyError.value = 'Could not load your history.'
-  } finally {
-    historyLoading.value = false
+    savedHistory.value = []
   }
 }
 
-const summary = computed(() => summarizeHistory(history.value))
+const summary = computed(() => summarizeHistory(savedHistory.value))
+const toggle = () => (isListening.value ? stopCapture() : startCapture())
+const buttonText = computed(() => (isListening.value ? 'Stop listening' : 'Start listening'))
 
-const toggle = () => (isListening.value ? stop() : start({ onQuota: props.updateQuota }))
-
-const buttonText = computed(() => {
-  if (status.value === 'connecting') return 'Connecting...'
-  return isListening.value ? 'Stop listening' : 'Start listening'
-})
-
-// A finished session is added to the history, so reload it when listening stops.
+// A finished session is saved on the server, so reload the saved history when it stops.
 watch(isListening, (now, before) => {
-  if (before && !now) loadHistory()
+  if (before && !now) loadSavedHistory()
 })
 
-onMounted(loadHistory)
+onMounted(loadSavedHistory)
 </script>
 
 <template>
@@ -64,22 +77,38 @@ onMounted(loadHistory)
       {{ errorMessage }}
     </p>
 
-    <!-- Top row -->
+    <!-- Top row: controls on the left, result and developer log on the right -->
     <div class="grid gap-5 xl:grid-cols-12">
-      <section
-        class="flex flex-col items-center justify-center gap-4 rounded-3xl border border-white/10 bg-gradient-to-br from-navy-800 to-[#0c5a68] p-6 xl:col-span-2"
-      >
-        <PlayButton size="sm" :playing="isListening" :pulse="isListening" :label="buttonText" @click="toggle" />
-        <p class="text-center text-sm font-semibold">{{ buttonText }}</p>
+      <section class="flex flex-col gap-6 rounded-3xl border border-white/10 bg-white/[0.04] p-6 xl:col-span-5">
+        <div class="flex items-center gap-5">
+          <PlayButton size="sm" :playing="isListening" :pulse="isListening" :label="buttonText" @click="toggle" />
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-semibold">{{ buttonText }}</p>
+            <VolumeMeter :volume="volume" class="mt-3" />
+          </div>
+        </div>
+
+        <CaptureControls
+          v-model:mode="mode"
+          v-model:selected-device="selectedDevice"
+          v-model:chunk-size="chunkSize"
+          :devices="devices"
+          :locked="isListening"
+        />
       </section>
 
-      <VerticalConfidence
-        class="xl:col-span-4"
-        :fake="currentResult ? Number(currentResult.fek_prob) : null"
-        :real="currentResult ? Number(currentResult.ril_prob) : null"
-      />
+      <div class="flex flex-col gap-5 xl:col-span-7">
+        <section class="rounded-3xl border border-white/10 bg-gradient-to-br from-navy-800 to-[#0c5a68] px-6 py-8">
+          <VerdictDisplay
+            :result="currentResult"
+            :listening="isListening"
+            :status-text="statusText"
+            :status-warn="statusWarn"
+          />
+        </section>
 
-      <LiveLog class="xl:col-span-6" :logs="liveLogs" :listening="isListening" />
+        <LiveLog :logs="liveLogs" :listening="isListening" />
+      </div>
     </div>
 
     <!-- Middle row -->
@@ -93,8 +122,8 @@ onMounted(loadHistory)
 
     <!-- Bottom row -->
     <div class="grid gap-5 xl:grid-cols-3">
-      <ActivityChart class="xl:col-span-1" :history="history" />
-      <RecentDetections class="xl:col-span-2" :history="history" :loading="historyLoading" :error="historyError" />
+      <ActivityChart class="xl:col-span-1" :history="savedHistory" />
+      <LiveHistoryTable class="xl:col-span-2" :rows="liveHistory" />
     </div>
   </div>
 </template>
