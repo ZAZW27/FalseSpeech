@@ -1,32 +1,38 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import LandingPage from '@/pages/landing/page.vue'
-import DetailPage from '@/pages/detail/page.vue'
+import LandingLayout from '@/components/layout/LandingLayout.vue'
 
-// One landing page. The first four routes render it and scroll to their section (meta.section).
+// Pages are lazy loaded. The layout is small and always needed for '/', so it is imported directly.
+const LandingPage = () => import('@/pages/landing/page.vue')
+const DetailPage = () => import('@/pages/detail/page.vue')
+const LoginPage = () => import('@/pages/login/page.vue')
+const RegisterPage = () => import('@/pages/register/page.vue')
+const DashboardPage = () => import('@/pages/dashboard/page.vue')
+
 const routes = [
-  { path: '/', name: 'home', component: LandingPage, meta: { title: 'Home', section: 'home' } },
-  { path: '/about', name: 'about', component: LandingPage, meta: { title: 'About', section: 'about' } },
+  // Landing group: header, footer and listening modal come from LandingLayout.
+  // Home, about, subscription and contact render the same one-page landing and scroll to meta.section.
   {
-    path: '/subscription',
-    name: 'subscription',
-    component: LandingPage,
-    meta: { title: 'Subscription', section: 'subscription' },
+    path: '/',
+    component: LandingLayout,
+    children: [
+      { path: '', name: 'home', component: LandingPage, meta: { title: 'Home', section: 'home' } },
+      { path: 'about', name: 'about', component: LandingPage, meta: { title: 'About', section: 'about' } },
+      {
+        path: 'subscription',
+        name: 'subscription',
+        component: LandingPage,
+        meta: { title: 'Subscription', section: 'subscription' },
+      },
+      { path: 'contact', name: 'contact', component: LandingPage, meta: { title: 'Contact', section: 'contact' } },
+      // Dynamic route: /detail/free, /detail/pro, /detail/pro-max, /detail/lifetime
+      { path: 'detail/:id', name: 'detail', component: DetailPage, meta: { title: 'Plan detail' } },
+    ],
   },
-  { path: '/contact', name: 'contact', component: LandingPage, meta: { title: 'Contact', section: 'contact' } },
-  // Dynamic route: /detail/free, /detail/pro, /detail/pro-max, /detail/lifetime
-  { path: '/detail/:id', name: 'detail', component: DetailPage, meta: { title: 'Plan detail' } },
-  {
-    path: '/login',
-    name: 'login',
-    component: () => import('@/pages/login/page.vue'),
-    meta: { title: 'Log in', layout: 'auth' },
-  },
-  {
-    path: '/register',
-    name: 'register',
-    component: () => import('@/pages/register/page.vue'),
-    meta: { title: 'Sign up', layout: 'auth' },
-  },
+
+  // Standalone pages. These do not use LandingLayout.
+  { path: '/login', name: 'login', component: LoginPage, meta: { title: 'Log in' } },
+  { path: '/register', name: 'register', component: RegisterPage, meta: { title: 'Sign up' } },
+  { path: '/dashboard', name: 'dashboard', component: DashboardPage, meta: { title: 'Dashboard' } },
 ]
 
 const router = createRouter({
