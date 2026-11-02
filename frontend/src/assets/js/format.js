@@ -25,3 +25,30 @@ export const getInitials = (name = '') =>
     .slice(0, 2)
     .map((part) => part.charAt(0).toUpperCase())
     .join('')
+
+// 204 -> "03:24", 4262 -> "1:11:02"
+export const formatClock = (totalSeconds) => {
+  const seconds = Math.max(0, Math.round(Number(totalSeconds) || 0))
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  const pad = (value) => String(value).padStart(2, '0')
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`
+}
+
+// Local calendar day as "YYYY-MM-DD".
+export const dayKey = (date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+
+// ISO string -> "Today, 08:12", "Yesterday, 21:30" or "Oct 13, 19:22"
+export const formatSessionTime = (iso, now = new Date()) => {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '-'
+
+  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+
+  if (dayKey(date) === dayKey(now)) return `Today, ${time}`
+  if (dayKey(date) === dayKey(yesterday)) return `Yesterday, ${time}`
+  return `${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${time}`
+}
