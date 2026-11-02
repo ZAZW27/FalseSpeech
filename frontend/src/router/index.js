@@ -21,6 +21,12 @@ const routes = [
     component: () => import('@/pages/login/page.vue'),
     meta: { title: 'Log in', layout: 'auth' },
   },
+  {
+    path: '/register',
+    name: 'register',
+    component: () => import('@/pages/register/page.vue'),
+    meta: { title: 'Sign up', layout: 'auth' },
+  },
 ]
 
 const router = createRouter({

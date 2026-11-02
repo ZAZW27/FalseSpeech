@@ -72,7 +72,7 @@ const submit = async () => {
       </h1>
       <p class="mt-3 text-sm text-navy-900/70">
         Don't have an account?
-        <RouterLink to="/subscription" class="font-semibold text-brand-green hover:underline">Sign up</RouterLink>
+        <RouterLink to="/register" class="font-semibold text-brand-green hover:underline">Sign up</RouterLink>
       </p>
 
       <form class="mt-8 flex flex-col gap-6" novalidate @submit.prevent="submit">

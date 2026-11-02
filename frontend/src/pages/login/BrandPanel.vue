@@ -6,10 +6,14 @@ import Icon from '@/components/ui/icons/Icon.vue'
 import AnalysisCard from '@/components/ui/cards/AnalysisCard.vue'
 import WaveformBars from '@/components/ui/charts/WaveformBars.vue'
 
-const copy = {
-  title: 'Welcome back.',
-  subtitle: 'Log in to see your history, daily usage and plan. Your next check is one tap away.',
-}
+// Defaults are the login copy. The register page passes its own.
+defineProps({
+  title: { type: String, default: 'Welcome back.' },
+  subtitle: {
+    type: String,
+    default: 'Log in to see your history, daily usage and plan. Your next check is one tap away.',
+  },
+})
 
 // The Figma brand panel shows the HUMAN result card.
 const result = heroResults.find((item) => item.id === 'human')
@@ -34,9 +38,9 @@ const result = heroResults.find((item) => item.id === 'human')
       </RouterLink>
 
       <h2 class="mt-[90px] text-balance text-5xl font-extrabold leading-[1.05] tracking-tight xl:text-[64px]">
-        {{ copy.title }}
+        {{ title }}
       </h2>
-      <p class="mt-8 max-w-[480px] text-lg leading-relaxed text-muted">{{ copy.subtitle }}</p>
+      <p class="mt-8 max-w-[480px] text-lg leading-relaxed text-muted">{{ subtitle }}</p>
 
       <div class="mt-12 w-[343px] max-w-full">
         <AnalysisCard :result="result" />

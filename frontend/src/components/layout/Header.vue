@@ -54,7 +54,10 @@ const solid = computed(() => isScrolled.value || route.name === "detail");
             </div>
 
             <div class="hidden items-center gap-5 lg:flex">
-                <BaseButton to="/login" size="sm">Login</BaseButton>
+                <BaseButton to="/login" size="sm" variant="outlineLight"
+                    >Login</BaseButton
+                >
+                <BaseButton to="/register" size="sm">Regist</BaseButton>
             </div>
 
             <IconButton

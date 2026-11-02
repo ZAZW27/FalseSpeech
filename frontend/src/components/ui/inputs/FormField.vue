@@ -5,7 +5,7 @@ const props = defineProps({
   type: {
     type: String,
     default: 'text',
-    validator: (v) => ['text', 'email', 'password', 'textarea'].includes(v),
+    validator: (v) => ['text', 'email', 'tel', 'password', 'textarea'].includes(v),
   },
   // dark: for navy backgrounds. light: for white or light-blue backgrounds.
   tone: { type: String, default: 'dark', validator: (v) => ['dark', 'light'].includes(v) },
