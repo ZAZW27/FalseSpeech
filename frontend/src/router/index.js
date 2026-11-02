@@ -15,6 +15,12 @@ const routes = [
   { path: '/contact', name: 'contact', component: LandingPage, meta: { title: 'Contact', section: 'contact' } },
   // Dynamic route: /detail/free, /detail/pro, /detail/pro-max, /detail/lifetime
   { path: '/detail/:id', name: 'detail', component: DetailPage, meta: { title: 'Plan detail' } },
+  {
+    path: '/login',
+    name: 'login',
+    component: () => import('@/pages/login/page.vue'),
+    meta: { title: 'Log in', layout: 'auth' },
+  },
 ]
 
 const router = createRouter({
