@@ -48,6 +48,7 @@ class DetectionSessionRow(Base):
     duration_s = Column(Integer, nullable=False, default=0)
     fake_count = Column(Integer, nullable=False, default=0)
     real_count = Column(Integer, nullable=False, default=0)
+    avg_fake_prob = Column(Float, nullable=False, default=0.0)
     verdict = Column(String(20), nullable=False, default="real")
 
 

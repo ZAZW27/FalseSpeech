@@ -7,6 +7,7 @@ const DetailPage = () => import('@/pages/detail/page.vue')
 const LoginPage = () => import('@/pages/login/page.vue')
 const RegisterPage = () => import('@/pages/register/page.vue')
 const DashboardPage = () => import('@/pages/dashboard/page.vue')
+const HistoryPage = () => import('@/pages/history/page.vue')
 
 const routes = [
   // Landing group: header, footer and listening modal come from LandingLayout.
@@ -33,6 +34,7 @@ const routes = [
   { path: '/login', name: 'login', component: LoginPage, meta: { title: 'Log in' } },
   { path: '/register', name: 'register', component: RegisterPage, meta: { title: 'Sign up' } },
   { path: '/dashboard', name: 'dashboard', component: DashboardPage, meta: { title: 'Dashboard' } },
+  { path: '/history', name: 'history', component: HistoryPage, meta: { title: 'History' } },
 ]
 
 const router = createRouter({

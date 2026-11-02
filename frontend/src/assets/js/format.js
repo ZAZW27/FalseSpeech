@@ -52,3 +52,27 @@ export const formatSessionTime = (iso, now = new Date()) => {
   if (dayKey(date) === dayKey(yesterday)) return `Yesterday, ${time}`
   return `${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${time}`
 }
+
+// ISO string -> "Oct 20, 2026 - 10:00 AM"
+export const formatDateTime = (iso) => {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '-'
+  const day = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+  return `${day} - ${time}`
+}
+
+// 42 -> "42s", 90 -> "1m 30s", 120 -> "2m", 3700 -> "1h 1m"
+export const formatSessionDuration = (totalSeconds) => {
+  const seconds = Math.max(0, Math.round(Number(totalSeconds) || 0))
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`
+  if (m > 0) return s > 0 ? `${m}m ${s}s` : `${m}m`
+  return `${s}s`
+}
+
+// 0.452 -> 45.2
+export const ratioToPercent = (ratio) =>
+  Math.round(Math.min(1, Math.max(0, Number(ratio) || 0)) * 1000) / 10

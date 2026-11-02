@@ -199,14 +199,12 @@ def detection_history(
     )
     result = []
     for r in rows:
-        total = (r.fake_count or 0) + (r.real_count or 0)
-        ratio = (r.fake_count / total) if total > 0 else 0.0
         result.append(
             DetectionSession(
                 session_id=str(r.id),
                 started_at=r.started_at,
                 duration=r.duration_s,
-                fake_ratio=ratio,
+                fake_ratio=float(r.avg_fake_prob or 0.0),
                 verdict=r.verdict,
             )
         )

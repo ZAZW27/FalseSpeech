@@ -52,6 +52,12 @@ export function useAudioCapture(options = {}) {
   let source = null
   let vizFrame = null
 
+  // One WebSocket per listening session. It opens on Start and closes on Stop.
+  let socket = null
+  // Metadata of chunks already sent, in order. The server answers every chunk
+  // exactly once and in order, so each reply takes the oldest entry.
+  let pendingChunks = []
+
   const pushLog = (text, tone = 'muted') => {
     liveLogs.value.push({ id: ++logId, time: new Date().toLocaleTimeString(), text, tone })
     if (liveLogs.value.length > MAX_LOGS) liveLogs.value.splice(0, liveLogs.value.length - MAX_LOGS)
@@ -153,6 +159,126 @@ export function useAudioCapture(options = {}) {
     volume.value = 0
   }
 
+  // ---------- WebSocket (one connection per session) ----------
+  const handleMessage = (event, currentSession) => {
+    // Always take the metadata entry, even for stale sessions, to keep the queue aligned.
+    const meta = pendingChunks.shift() ?? { size: 0, silent: false }
+
+    try {
+      const data = JSON.parse(event.data)
+      if (currentSession !== sessionId) return // session was stopped meanwhile
+
+      if (data.error) {
+        pushLog(`error: ${data.error}`, 'warn')
+        if (data.error === 'quota exceeded') {
+          if (data.quota_used != null) options.onQuota?.(data.quota_used, data.quota_limit)
+          errorMessage.value = 'Daily quota reached. Listening stopped.'
+          stopCapture()
+        }
+        return
+      }
+
+      const { silent, size } = meta
+      const fake = Number(data.fek_prob) || 0
+      const real = Number(data.ril_prob) || 0
+      const { label, tone } = classifyChunk({ silent, real, fake })
+
+      currentResult.value = { label, tone, fake, real, silent, size, segmentIndex: data.segment_index }
+      history.value.unshift({
+        id: `${data.session_id ?? 's'}-${data.segment_index ?? Date.now()}-${size}`,
+        time: new Date().toLocaleTimeString(),
+        chunk: data.segment_index ?? '?',
+        size,
+        label,
+        tone,
+        fake,
+      })
+      if (history.value.length > MAX_HISTORY) history.value.length = MAX_HISTORY
+
+      pushLog(
+        `result: ${label} (fake=${fake.toFixed(3)}, session=${data.session_id}, quota=${data.quota_used}/${data.quota_limit})`,
+        tone === 'uncertain' ? 'warn' : tone,
+      )
+
+      if (data.quota_used != null) options.onQuota?.(data.quota_used, data.quota_limit)
+    } catch (error) {
+      pushLog(`parse error: ${error.message}`, 'warn')
+    }
+  }
+
+  // Resolves once the socket is open. Rejects if it cannot connect.
+  const connectSocket = (currentSession) =>
+    new Promise((resolve, reject) => {
+      const ws = new WebSocket(`${WS_BASE}/ws/audio?token=${encodeURIComponent(getToken() ?? '')}`)
+      ws.binaryType = 'arraybuffer'
+      let opened = false
+
+      ws.onopen = () => {
+        opened = true
+        socket = ws
+        pushLog('ws connected (one connection for this session)')
+        resolve()
+      }
+
+      ws.onmessage = (event) => handleMessage(event, currentSession)
+
+      ws.onerror = () => {
+        pushLog('ws network error', 'warn')
+        if (!opened) reject(new Error('Could not connect to the server.'))
+      }
+
+      ws.onclose = (event) => {
+        if (!opened) {
+          reject(new Error(event.reason || `Connection closed (code ${event.code}).`))
+          return
+        }
+        if (socket === ws) socket = null
+
+        // Closed by our own stopCapture, or by a newer session: nothing to do.
+        if (currentSession !== sessionId) return
+
+        if (event.code === 1008 && event.reason === 'quota exceeded') {
+          pushLog('quota exceeded', 'warn')
+          errorMessage.value = 'Daily quota reached. Listening stopped.'
+          stopCapture()
+        } else if (event.code === 1008) {
+          pushLog('Session expired. Redirecting to login...', 'warn')
+          clearToken()
+          stopCapture()
+          setTimeout(() => options.onSessionExpired?.(), EXPIRED_REDIRECT_MS)
+        } else {
+          pushLog(`ws closed unexpectedly: Code ${event.code} - ${event.reason}`, 'warn')
+          errorMessage.value = 'Connection to the server was lost.'
+          stopCapture()
+        }
+      }
+    })
+
+  const closeSocket = () => {
+    const ws = socket
+    socket = null
+    pendingChunks = []
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+      ws.close(1000, 'client stopped')
+    }
+  }
+
+  // Sends one chunk through the already open socket.
+  const sendChunk = (blob) => {
+    const silent = blob.size < SILENCE_THRESHOLD_BYTES
+    statusText.value = `chunk: ${blob.size} bytes${silent ? ' -- LIKELY SILENCE' : ''}`
+    statusWarn.value = silent
+
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      pushLog('socket not open, chunk dropped', 'warn')
+      return
+    }
+
+    pendingChunks.push({ size: blob.size, silent })
+    pushLog(`sending ${blob.size} bytes`)
+    socket.send(blob)
+  }
+
   // ---------- Chunks ----------
   const recordChunk = () => {
     if (!isListening.value || !stream) return
@@ -173,7 +299,7 @@ export function useAudioCapture(options = {}) {
         pushLog('empty chunk', 'warn')
         return
       }
-      sendChunk(new Blob(chunks, { type: mime || 'audio/webm' }), currentSession)
+      sendChunk(new Blob(chunks, { type: mime || 'audio/webm' }))
     }
 
     recorder.start()
@@ -188,72 +314,6 @@ export function useAudioCapture(options = {}) {
       recordChunk()
       scheduleNextChunk()
     }, chunkSize.value * 1000 + CHUNK_GRACE_MS)
-  }
-
-  // One WebSocket per chunk: connect, send the blob, read one result, close.
-  const sendChunk = (blob, currentSession) => {
-    const silent = blob.size < SILENCE_THRESHOLD_BYTES
-    statusText.value = `chunk: ${blob.size} bytes${silent ? ' -- LIKELY SILENCE' : ''}`
-    statusWarn.value = silent
-
-    const ws = new WebSocket(`${WS_BASE}/ws/audio?token=${encodeURIComponent(getToken() ?? '')}`)
-    ws.binaryType = 'arraybuffer'
-
-    ws.onopen = async () => {
-      pushLog(`sending ${blob.size} bytes`)
-      ws.send(await blob.arrayBuffer())
-    }
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        if (currentSession !== sessionId) return // session was stopped meanwhile
-
-        if (data.error) {
-          pushLog(`error: ${data.error}`, 'warn')
-          return
-        }
-
-        const fake = Number(data.fek_prob) || 0
-        const real = Number(data.ril_prob) || 0
-        const { label, tone } = classifyChunk({ silent, real, fake })
-
-        currentResult.value = { label, tone, fake, real, silent, size: blob.size, segmentIndex: data.segment_index }
-        history.value.unshift({
-          id: `${data.session_id ?? 's'}-${data.segment_index ?? Date.now()}-${blob.size}`,
-          time: new Date().toLocaleTimeString(),
-          chunk: data.segment_index ?? '?',
-          size: blob.size,
-          label,
-          tone,
-          fake,
-        })
-        if (history.value.length > MAX_HISTORY) history.value.length = MAX_HISTORY
-
-        pushLog(
-          `result: ${label} (fake=${fake.toFixed(3)}, session=${data.session_id}, quota=${data.quota_used}/${data.quota_limit})`,
-          tone === 'uncertain' ? 'warn' : tone,
-        )
-
-        if (data.quota_used != null) options.onQuota?.(data.quota_used, data.quota_limit)
-      } catch (error) {
-        pushLog(`parse error: ${error.message}`, 'warn')
-      } finally {
-        ws.close()
-      }
-    }
-
-    ws.onerror = () => pushLog('ws network error', 'warn')
-    ws.onclose = (event) => {
-      if (event.code === 1008) {
-        pushLog('Session expired. Redirecting to login...', 'warn')
-        clearToken()
-        stopCapture()
-        setTimeout(() => options.onSessionExpired?.(), EXPIRED_REDIRECT_MS)
-      } else if (event.code !== 1000 && event.code !== 1005) {
-        pushLog(`ws closed unexpectedly: Code ${event.code} - ${event.reason}`, 'warn')
-      }
-    }
   }
 
   // ---------- Start and stop ----------
@@ -295,11 +355,35 @@ export function useAudioCapture(options = {}) {
       return
     }
 
-    isStarting = false
     sessionId += 1
+    const currentSession = sessionId
+
+    // Open the single WebSocket for this session before recording anything.
+    try {
+      await connectSocket(currentSession)
+    } catch (error) {
+      pushLog(`start failed: ${error.message}`, 'warn')
+      errorMessage.value = error.message
+      sessionId += 1
+      closeSocket()
+      releaseStreams()
+      isStarting = false
+      return
+    }
+
+    // The user could have cancelled (for example by stopping the tab share) while connecting.
+    if (currentSession !== sessionId) {
+      closeSocket()
+      releaseStreams()
+      isStarting = false
+      return
+    }
+
+    isStarting = false
     isListening.value = true
     currentResult.value = null
     history.value = [] // new session starts with an empty history
+    pendingChunks = []
     statusText.value = ''
     statusWarn.value = false
 
@@ -314,6 +398,7 @@ export function useAudioCapture(options = {}) {
     sessionId += 1
     clearTimeout(chunkTimer)
     chunkTimer = null
+    closeSocket() // the server closes the session row when it sees this disconnect
     releaseStreams()
     stopVisualizer()
     statusText.value = ''

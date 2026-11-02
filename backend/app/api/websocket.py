@@ -84,6 +84,7 @@ async def websocket_endpoint(websocket: WebSocket):
     segment_index = 0
     fake_count = 0
     real_count = 0
+    total_fek_prob = 0.0
     total_audio_seconds = 0.0
     started = datetime.now(timezone.utc)
 
@@ -115,6 +116,7 @@ async def websocket_endpoint(websocket: WebSocket):
             ril_prob, fek_prob = await asyncio.to_thread(inference.inferencing, wav_tensor)
             is_fake = fek_prob > 0.5
 
+            total_fek_prob += float(fek_prob)
             total_audio_seconds += chunk_seconds
             segment_index += 1
             if is_fake:
@@ -156,6 +158,8 @@ async def websocket_endpoint(websocket: WebSocket):
         duration = int((ended - started).total_seconds())
 
         total = fake_count + real_count
+        avg_fake_prob = (total_fek_prob / total) if total > 0 else 0.0
+
         if total == 0:
             verdict = "real"
         elif fake_count / total >= 0.5:
@@ -170,6 +174,7 @@ async def websocket_endpoint(websocket: WebSocket):
             session.duration_s = duration
             session.fake_count = fake_count
             session.real_count = real_count
+            session.avg_fake_prob = avg_fake_prob
             session.verdict = verdict
 
             user.quota_used = user.quota_used + int(total_audio_seconds)
@@ -177,7 +182,7 @@ async def websocket_endpoint(websocket: WebSocket):
             db.commit()
             logger.info(
                 f"session {session_id} closed: user={user.id} "
-                f"fake={fake_count} real={real_count} verdict={verdict} "
+                f"fake={fake_count} real={real_count} avg_fake_prob={avg_fake_prob:.3f} verdict={verdict} "
                 f"audio_seconds={int(total_audio_seconds)} "
                 f"quota={user.quota_used}/{user.quota_limit}"
             )
