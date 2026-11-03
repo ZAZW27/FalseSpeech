@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_curr_user
@@ -20,6 +20,7 @@ from app.schemas import (
     DetectionSession, DetectionSegment, DetectionSessionDetail,
 )
 from app.service import auth, inference
+from app.limiter import limiter
 
 router = APIRouter()
 
@@ -65,9 +66,9 @@ def register(body: RegisterReq, db: Session = Depends(get_db)):
 
     return RegisterRes(user_id=str(user.id), email=user.email)
 
-
 @router.post("/api/auth/login", response_model=LoginRes, tags=["auth"])
-def login(body: LoginReq, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")  # <-- Tetep pake limiter
+def login(request: Request, body: LoginReq, db: Session = Depends(get_db)):
     token = auth.login_user(db, body.email_or_phone, body.password)
     if token is None:
         raise HTTPException(

@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+import re
 
 # Cek kondisi model
 class HealthCheck(BaseModel):
@@ -22,6 +23,21 @@ class RegisterRes(BaseModel):
 class LoginReq(BaseModel):
     email_or_phone: str
     password: str
+
+    @field_validator('email_or_phone')
+    @classmethod
+    def validate_email_or_phone(cls, v):
+        # Cek apakah formatnya email
+        if '@' in v:
+            # Validasi email secara manual
+            email_regex = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+            if not re.match(email_regex, v):
+                raise ValueError('Format email tidak valid')
+        else:
+            # Cek apakah formatnya nomor telepon (hanya angka, minimal 8 digit)
+            if not re.match(r'^\d{8,15}$', v):
+                raise ValueError('Format email atau nomor telepon tidak valid')
+        return v
 
 class UserPub(BaseModel): 
     id: str
