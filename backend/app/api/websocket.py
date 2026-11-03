@@ -11,6 +11,7 @@ from app.db.session import SessionLocal
 from app.security.tokens import decode_token_akses
 from app.service import inference
 from app.service.audio import preprocess_audio
+from app.service.conn_manager import manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -67,9 +68,15 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close(code=1008, reason="quota exceeded")
         return
 
+    is_connected = await manager.connect(user.id, websocket)
+    if not is_connected:
+        db.close()
+        await websocket.close(code=1008, reason="Multiple concurrent connections are not allowed. Please close other tabs.")
+        return
+
     logger.info(f"WS connected user={user.id} tier={user.tier} quota={user.quota_used}/{user.quota_limit}")
     _, device_used = inference.get_model()
-
+    
     session = DetectionSessionRow(
         user_id=user.id,
         fake_count=0,
@@ -200,4 +207,5 @@ async def websocket_endpoint(websocket: WebSocket):
         except Exception as e:
             logger.error(f"failed to close session: {e}")
         finally:
+            manager.disconnect(user.id)
             db.close()
