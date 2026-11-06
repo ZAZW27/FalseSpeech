@@ -7,9 +7,15 @@ import FeatureCard from "@/components/ui/cards/FeatureCard.vue";
 <template>
     <section
         id="about"
-        class="bg-[#202734] min-h-svh py-16 md:py-24 lg:py-[130px]"
+        class="relative snap-start overflow-hidden bg-[#202734] min-h-svh py-16 md:py-24 lg:py-[130px]"
     >
-        <div class="mx-auto w-full max-w-[1440px] px-6 lg:px-12 xl:px-20">
+        <div
+            class="pointer-events-none absolute inset-0 bg-[linear-gradient(-35deg,transparent_0%,rgba(255,216,255,0.1)_50%,transparent_100%)]"
+        ></div>
+
+        <div
+            class="relative mx-auto w-full max-w-[1440px] px-6 lg:px-12 xl:px-20"
+        >
             <SectionHeader
                 align="split"
                 :eyebrow="about.eyebrow"
