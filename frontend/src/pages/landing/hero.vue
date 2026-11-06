@@ -15,7 +15,7 @@ const cardPositions = [
     "lg:absolute lg:right-[274px] lg:top-[620px] lg:w-[332px] xl:right-[274px]",
 ];
 </script>
-
+<!--  -->
 <template>
     <section
         id="home"
