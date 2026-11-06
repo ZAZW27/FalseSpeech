@@ -12,7 +12,7 @@ import PricingCard from "@/components/ui/cards/PricingCard.vue";
         <div class="mx-auto w-full max-w-[1440px] px-6 lg:px-12 xl:px-20">
             <SectionHeader
                 align="center"
-                tone="light"
+                tone="lilght"
                 :eyebrow="pricingHeader.eyebrow"
                 :title="pricingHeader.title"
                 :description="pricingHeader.description"
