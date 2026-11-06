@@ -15,11 +15,11 @@ const cardPositions = [
     "lg:absolute lg:right-[274px] lg:top-[620px] lg:w-[332px] xl:right-[274px]",
 ];
 </script>
-<!--  -->
+
 <template>
     <section
         id="home"
-        class="relative min-h-svh lg:pt-24 isolate overflow-hidden bg-gradient-to-br from-[#16181c] via-[#1d2739] to-[#36415A]"
+        class="snap-start relative min-h-svh lg:pt-24 isolate overflow-hidden bg-gradient-to-br from-[#16181c] via-[#1d2739] to-[#36415A]"
     >
         <span
             class="pointer-events-none absolute md:-left-67 md:-top-67 -left-40 -top-40 -z-10 size-[320px] rounded-full bg-[#2f394a87] blur-[120px] lg:size-[620px]"
