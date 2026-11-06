@@ -19,17 +19,16 @@ const cardPositions = [
 <template>
     <section
         id="home"
-        class="relative isolate overflow-hidden bg-gradient-to-br from-[#040B1F] via-[#071433] to-[#0B2A6B]"
+        class="relative min-h-svh lg:pt-24 isolate overflow-hidden bg-gradient-to-br from-[#16181c] via-[#1d2739] to-[#36415A]"
     >
-        <!-- Background depth layers -->
         <span
-            class="pointer-events-none absolute md:-left-67 md:-top-67 -left-40 -top-40 -z-10 size-[320px] rounded-full bg-[#1b5bff]/40 blur-[120px] lg:size-[620px]"
+            class="pointer-events-none absolute md:-left-67 md:-top-67 -left-40 -top-40 -z-10 size-[320px] rounded-full bg-[#2f394a87] blur-[120px] lg:size-[620px]"
         />
         <span
-            class="pointer-events-none absolute -bottom-32 -right-32 -z-10 size-[350px] rounded-full bg-lime-400/40 blur-[130px] lg:size-[640px]"
+            class="pointer-events-none absolute -bottom-[30svh] -right-[20svw] -z-10 size-[350px] rounded-full bg-[#525d7677] blur-[150px] lg:size-[640px]"
         />
         <span
-            class="pointer-events-none absolute left-0 top-32 -z-10 select-none text-[200px] font-extrabold uppercase leading-[0.85] tracking-tighter text-white/[0.04] lg:text-[300px] xl:text-[360px]"
+            class="pointer-events-none opacity-70 absolute right-0 lg:top-32 top-[40%] -z-10 select-none lg:text-[200px] text-[14rem] font-extrabold uppercase leading-[0.85] tracking-tighter text-white/[0.04] lg:text-[300px] xl:text-[360px]"
             aria-hidden="true"
         >
             False<br />Speech
@@ -38,7 +37,6 @@ const cardPositions = [
         <div
             class="relative mx-auto flex w-full max-w-480 flex-col px-6 pb-16 pt-[104px] lg:min-h-[900px] lg:px-12 lg:pt-[200px] xl:px-20"
         >
-            <!-- Foreground copy -->
             <div class="max-w-[660px]">
                 <LiveBadge :label="hero.badge" />
 
@@ -46,9 +44,10 @@ const cardPositions = [
                     class="mt-7 text-balance text-4xl font-extrabold leading-[1.08] tracking-tight md:text-6xl xl:text-[68px]"
                 >
                     {{ hero.headlineLead
-                    }}<span class="text-lime-300">{{
-                        hero.headlineHighlight
-                    }}</span>
+                    }}<span
+                        class="bg-linear-to-br from-brand-green to-secondary bg-clip-text text-transparent"
+                        >{{ hero.headlineHighlight }}</span
+                    >
                 </h1>
 
                 <p
@@ -72,13 +71,13 @@ const cardPositions = [
 
             <!-- Waveform -->
             <div
-                class="mt-12 h-[118px] w-full max-w-[348px] md:h-[160px] md:max-w-[520px] lg:absolute lg:right-0 lg:top-[340px] lg:mt-0 lg:h-[235px] lg:w-[620px] lg:max-w-none xl:w-[696px]"
+                class="mt-12 h-[118px] w-full max-w-[520px] md:h-[160px] md:max-w-[520px] lg:absolute lg:right-0 lg:top-[340px] lg:mt-0 lg:h-[235px] lg:w-[620px] lg:max-w-none xl:w-[696px]"
             >
                 <WaveformBars
                     :count="44"
                     glow
                     wobbles
-                    bar-width-class="w-1 lg:w-2"
+                    bar-width-class="w-1.5 lg:w-2"
                 />
             </div>
 

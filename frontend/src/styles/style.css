@@ -16,9 +16,10 @@
   --color-lime-300: #d4ff6b;
   --color-lime-400: #b6f23c;
 
-  --color-brand-green: #16c784;
-  --color-danger: #ff5c7a;
-  --color-muted: #a9b8d6;
+  --color-brand-green: #B7D894;
+  --color-secondary: #E0F8C7;
+  --color-danger: #ff96a1;
+  --color-muted: #E5E5E5;
   --color-surface-light: #f3f7ff;
 
   --animate-wave: wave 1.2s ease-in-out infinite;
@@ -27,10 +28,12 @@
   --animate-sheet-up: sheet-up 0.28s ease-out both;
 
   @keyframes wave {
+
     0%,
     100% {
       transform: scaleY(0.35);
     }
+
     50% {
       transform: scaleY(1);
     }
@@ -41,6 +44,7 @@
       transform: scale(1);
       opacity: 0.5;
     }
+
     100% {
       transform: scale(1.25);
       opacity: 0;
@@ -51,6 +55,7 @@
     from {
       opacity: 0;
     }
+
     to {
       opacity: 1;
     }
@@ -61,6 +66,7 @@
       opacity: 0;
       transform: translateY(24px);
     }
+
     to {
       opacity: 1;
       transform: translateY(0);

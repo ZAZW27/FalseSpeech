@@ -58,3 +58,5 @@ frontend/dist/
 *.zip 
 
 test/
+
+*.txt
