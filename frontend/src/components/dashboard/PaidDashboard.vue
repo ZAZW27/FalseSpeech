@@ -71,7 +71,7 @@ onMounted(loadSavedHistory)
   <div class="flex flex-col gap-5">
     <p
       v-if="errorMessage"
-      class="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
+      class="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-400"
       role="alert"
     >
       {{ errorMessage }}
@@ -79,7 +79,7 @@ onMounted(loadSavedHistory)
 
     <!-- Top row: controls on the left, result and developer log on the right -->
     <div class="grid gap-5 xl:grid-cols-12">
-      <section class="flex flex-col gap-6 rounded-3xl border border-white/10 bg-white/[0.04] p-6 xl:col-span-5">
+      <section class="flex flex-col gap-6 rounded-3xl border border-back-secondary bg-back-secondary/40 p-6 xl:col-span-5">
         <div class="flex items-center gap-5">
           <PlayButton size="sm" :playing="isListening" :pulse="isListening" :label="buttonText" @click="toggle" />
           <div class="min-w-0 flex-1">
@@ -98,7 +98,7 @@ onMounted(loadSavedHistory)
       </section>
 
       <div class="flex flex-col gap-5 xl:col-span-7">
-        <section class="rounded-3xl border border-white/10 bg-gradient-to-br from-navy-800 to-[#0c5a68] px-6 py-8">
+        <section class="rounded-3xl border border-back-secondary bg-gradient-to-br from-back-secondary to-back-prime px-6 py-8">
           <VerdictDisplay
             :result="currentResult"
             :listening="isListening"

@@ -12,12 +12,12 @@ const columns = 'grid grid-cols-[0.8fr_1.8fr_0.9fr_1.5fr_1.2fr] items-center gap
 </script>
 
 <template>
-  <div class="rounded-3xl border border-white/10 bg-white/[0.04]">
+  <div class="rounded-3xl border border-back-secondary bg-back-secondary/40">
     <!-- Scrolls horizontally if the screen is narrow -->
     <div class="overflow-x-auto">
       <div class="min-w-[680px]" role="table" aria-label="Detection history">
         <div
-          :class="[columns, 'border-b border-white/10 px-6 py-4 text-[11px] font-semibold uppercase tracking-wider text-muted']"
+          :class="[columns, 'border-b border-back-secondary px-6 py-4 text-[11px] font-semibold uppercase tracking-wider text-secondary/70']"
           role="row"
         >
           <span role="columnheader">Session ID</span>
@@ -30,12 +30,12 @@ const columns = 'grid grid-cols-[0.8fr_1.8fr_0.9fr_1.5fr_1.2fr] items-center gap
         <div
           v-for="row in rows"
           :key="row.id"
-          :class="[columns, 'border-b border-white/5 px-6 py-4 text-sm transition last:border-b-0 hover:bg-white/[0.03]']"
+          :class="[columns, 'border-b border-back-secondary px-6 py-4 text-sm transition last:border-b-0 hover:bg-white/[0.03]']"
           role="row"
         >
-          <span role="cell" class="font-mono text-muted">{{ row.sessionId }}</span>
+          <span role="cell" class="font-mono text-secondary/70">{{ row.sessionId }}</span>
           <span role="cell" class="font-medium">{{ row.date }}</span>
-          <span role="cell" class="tabular-nums text-muted">{{ row.duration }}</span>
+          <span role="cell" class="tabular-nums text-secondary/70">{{ row.duration }}</span>
           <span role="cell" class="flex items-center gap-3">
             <ConfidenceBar :value="row.fakePercent" :tone="row.meta.tone" height-class="h-1.5" class="max-w-[90px]" />
             <span class="text-xs font-semibold tabular-nums">{{ row.fakePercent }}%</span>

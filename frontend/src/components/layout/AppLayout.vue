@@ -71,15 +71,15 @@ onMounted(loadUser)
 </script>
 
 <template>
-  <div class="min-h-screen bg-navy-900 text-white lg:pl-[260px]">
+  <div class="min-h-screen bg-back-prime text-white lg:pl-[260px]">
     <!-- Desktop sidebar -->
-    <aside class="fixed inset-y-0 left-0 z-30 hidden w-[260px] border-r border-white/5 bg-navy-950 lg:block">
+    <aside class="fixed inset-y-0 left-0 z-30 hidden w-[260px] border-r border-back-secondary bg-back-prime lg:block">
       <AppSidebar :user="user" @logout="logout" />
     </aside>
 
     <!-- Mobile navbar -->
     <header
-      class="sticky top-0 z-30 flex h-[72px] items-center justify-between border-b border-white/5 bg-navy-950/90 px-5 backdrop-blur lg:hidden"
+      class="sticky top-0 z-30 flex h-[72px] items-center justify-between border-b border-back-secondary bg-back-prime/90 px-5 backdrop-blur lg:hidden"
     >
       <RouterLink to="/" class="flex items-center gap-2.5 text-lg font-bold">
         <Icon name="waveform" :size="28" />
@@ -91,9 +91,9 @@ onMounted(loadUser)
     <!-- Mobile drawer -->
     <Teleport to="body">
       <div v-if="drawerOpen" class="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
-        <div class="absolute inset-0 animate-fade-in bg-navy-950/70 backdrop-blur-sm" @click="drawerOpen = false" />
+        <div class="absolute inset-0 animate-fade-in bg-back-prime/70 backdrop-blur-sm" @click="drawerOpen = false" />
         <aside
-          class="absolute inset-y-0 left-0 w-[280px] max-w-[85vw] animate-fade-in border-r border-white/5 bg-navy-950 shadow-[20px_0_60px_rgba(0,0,0,0.5)]"
+          class="absolute inset-y-0 left-0 w-[280px] max-w-[85vw] animate-fade-in border-r border-back-secondary bg-back-prime shadow-[20px_0_60px_rgba(0,0,0,0.5)]"
         >
           <AppSidebar :user="user" @navigate="drawerOpen = false" @logout="logout" />
         </aside>
@@ -107,7 +107,7 @@ onMounted(loadUser)
           <div>
             <slot name="topbar" :user="user">
               <h1 class="text-3xl font-extrabold tracking-tight lg:text-[32px]">{{ title }}</h1>
-              <p v-if="subtitle" class="mt-1.5 text-sm text-muted">{{ subtitle }}</p>
+              <p v-if="subtitle" class="mt-1.5 text-sm text-secondary/70">{{ subtitle }}</p>
             </slot>
           </div>
           <slot name="actions" :user="user" />
@@ -120,12 +120,12 @@ onMounted(loadUser)
 
       <!-- Error -->
       <div v-else-if="errorMessage" class="mx-auto mt-24 max-w-[420px] text-center" role="alert">
-        <p class="text-muted">{{ errorMessage }}</p>
+        <p class="text-secondary/70">{{ errorMessage }}</p>
         <BaseButton class="mt-6" @click="loadUser">Try again</BaseButton>
       </div>
 
       <!-- Loading -->
-      <p v-else-if="isLoading" class="mt-24 text-center text-sm text-muted" role="status">
+      <p v-else-if="isLoading" class="mt-24 text-center text-sm text-secondary/70" role="status">
         Loading your account...
       </p>
     </main>

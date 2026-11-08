@@ -12,7 +12,7 @@ const silent = computed(() => props.volume < props.silentBelow)
 
 <template>
   <div
-    class="h-3 overflow-hidden rounded-full border border-white/10 bg-white/10"
+    class="h-3 overflow-hidden rounded-full border border-back-secondary bg-white/10"
     role="meter"
     aria-label="Audio volume"
     :aria-valuenow="Math.round(volume)"

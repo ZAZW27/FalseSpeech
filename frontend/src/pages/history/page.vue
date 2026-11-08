@@ -111,20 +111,20 @@ onMounted(loadHistory)
   <AppLayout title="Detection History" subtitle="Results of your past listening sessions.">
     <div class="flex flex-col gap-5">
       <!-- Error -->
-      <div v-if="errorMessage" class="rounded-3xl border border-danger/30 bg-danger/10 p-8 text-center" role="alert">
-        <p class="text-danger">{{ errorMessage }}</p>
+      <div v-if="errorMessage" class="rounded-3xl border border-red-400/30 bg-red-400/10 p-8 text-center" role="alert">
+        <p class="text-red-400">{{ errorMessage }}</p>
         <BaseButton class="mt-5" @click="loadHistory">Try again</BaseButton>
       </div>
 
       <!-- Loading -->
-      <p v-else-if="isLoading" class="py-16 text-center text-sm text-muted" role="status">Loading history...</p>
+      <p v-else-if="isLoading" class="py-16 text-center text-sm text-secondary/70" role="status">Loading history...</p>
 
       <!-- Empty: the account has no sessions yet -->
       <div
         v-else-if="!history.length"
-        class="flex flex-col items-center rounded-3xl border border-white/10 bg-white/[0.04] px-6 py-16 text-center"
+        class="flex flex-col items-center rounded-3xl border border-back-secondary bg-back-secondary/40 px-6 py-16 text-center"
       >
-        <p class="max-w-[360px] text-muted">No history found. Start listening to log your first session.</p>
+        <p class="max-w-[360px] text-secondary/70">No history found. Start listening to log your first session.</p>
         <BaseButton to="/dashboard" class="mt-6">Start listening</BaseButton>
       </div>
 
@@ -133,7 +133,7 @@ onMounted(loadHistory)
         <div class="flex flex-col gap-3 md:flex-row">
           <div class="relative flex-1">
             <label for="history-search" class="sr-only">Search by date or session ID</label>
-            <span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted">
+            <span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-secondary/70">
               <Icon name="search" :size="18" />
             </span>
             <input
@@ -141,7 +141,7 @@ onMounted(loadHistory)
               v-model="search"
               type="search"
               placeholder="Search by date or session ID"
-              class="h-12 w-full rounded-xl border border-white/15 bg-white/5 pl-12 pr-4 text-sm text-white placeholder:text-muted/60 focus:border-lime-400 focus:outline-none"
+              class="h-12 w-full rounded-xl border border-white/15 bg-white/5 pl-12 pr-4 text-sm text-white placeholder:text-secondary/60 focus:border-brand-green focus:outline-none"
             />
           </div>
 
@@ -150,7 +150,7 @@ onMounted(loadHistory)
             <select
               id="history-verdict"
               v-model="verdictFilter"
-              class="h-12 w-full rounded-xl border border-white/15 bg-navy-950 px-4 text-sm text-white focus:border-lime-400 focus:outline-none md:w-[180px]"
+              class="h-12 w-full rounded-xl border border-white/15 bg-back-prime px-4 text-sm text-white focus:border-brand-green focus:outline-none md:w-[180px]"
             >
               <option v-for="option in verdictOptions" :key="option.value" :value="option.value">
                 {{ option.label }}
@@ -162,7 +162,7 @@ onMounted(loadHistory)
         <!-- No match for the current filters -->
         <p
           v-if="!filteredRows.length"
-          class="rounded-3xl border border-white/10 bg-white/[0.04] px-6 py-12 text-center text-sm text-muted"
+          class="rounded-3xl border border-back-secondary bg-back-secondary/40 px-6 py-12 text-center text-sm text-secondary/70"
         >
           No sessions match your filters.
         </p>
@@ -179,10 +179,10 @@ onMounted(loadHistory)
 
         <!-- Pagination -->
         <div class="flex flex-col items-center justify-between gap-4 sm:flex-row">
-          <p class="text-sm text-muted">{{ rangeLabel }}</p>
+          <p class="text-sm text-secondary/70">{{ rangeLabel }}</p>
           <div class="flex items-center gap-3">
             <BaseButton variant="outlineLight" size="sm" :disabled="page <= 1" @click="goPrevious">Previous</BaseButton>
-            <span class="text-sm text-muted">Page {{ page }} of {{ totalPages }}</span>
+            <span class="text-sm text-secondary/70">Page {{ page }} of {{ totalPages }}</span>
             <BaseButton variant="outlineLight" size="sm" :disabled="page >= totalPages" @click="goNext">Next</BaseButton>
           </div>
         </div>
