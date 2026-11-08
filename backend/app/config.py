@@ -11,5 +11,5 @@ target_sr = int(os.getenv("TARGET_SR", "16000"))
 chunk_dur = int(os.getenv("CHUNK_DURATION_S", "10"))
 device = os.getenv("DEVICE", "auto")  # "cpu" | "cuda" | "auto"
 
-midtrans_server_key = os.getenv("MID_TRANS_API", "")
+midtrans_server_key = os.getenv("MIDTRANS_SERVER_KEY", "")
 midtrans_is_production = os.getenv("MIDTRANS_IS_PRODUCTION", "false").lower() == "true"

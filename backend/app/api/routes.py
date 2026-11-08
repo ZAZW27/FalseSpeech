@@ -7,6 +7,7 @@ from app.db.models import (
     User,
     DetectionSessionRow,
     DetectionSegmentRow,
+    TransactionRow, 
 )
 from app.db.session import get_db
 from app.schemas import (
@@ -22,6 +23,12 @@ from app.schemas import (
 from app.service import auth, inference
 from app.limiter import limiter
 
+import uuid
+from app.service.payment import create_payment_link
+import logging
+
+
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -161,11 +168,44 @@ def list_tiers():
     ]
 
 @router.post("/api/subscription/upgrade", response_model=UpgradeRes, tags=["subscription"])
-def upgrade(body: UpgradeReq, user: User = Depends(get_curr_user)):
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Not implemented yet",
-    )
+def upgrade(body: UpgradeReq, user: User = Depends(get_curr_user), db: Session = Depends(get_db)):
+    prices = {
+        "pro": 49000,
+        "pro_max": 99000,
+        "lifetime": 2500000
+    }
+    
+    if body.target_tier not in prices:
+        raise HTTPException(status_code=400, detail="Paket tidak valid")
+        
+    if user.tier == body.target_tier:
+        raise HTTPException(status_code=400, detail="Anda sudah berada di paket ini")
+
+    amount = prices[body.target_tier]
+    
+    order_id = f"FS-{user.id}-{body.target_tier}-{uuid.uuid4().hex[:6]}"
+    
+    try:
+        payment_data = create_payment_link(
+            order_id=order_id,
+            amount=amount,
+            tier_name=body.target_tier,
+            user_email=user.email
+        )
+        
+        new_transaction = TransactionRow(
+            user_id=user.id,
+            order_id=order_id,
+            amount=amount,
+            status="pending"
+        )
+        db.add(new_transaction)
+        db.commit()
+        
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+        
+    return UpgradeRes(payment_url=payment_data['redirect_url'])
 
 
 @router.post("/api/subscription/downgrade", response_model=DowngradeRes, tags=["subscription"])
@@ -174,7 +214,6 @@ def downgrade(body: DowngradeReq, user: User = Depends(get_curr_user)):
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail="Not implemented yet",
     )
-
 
 @router.get("/api/billing/history", response_model=list[Invoice],
             tags=["subscription"])
@@ -249,3 +288,39 @@ def detection_history_detail(
             for s in segs
         ],
     )
+
+@router.post("/api/payment/webhook", tags=["subscription"])
+async def midtrans_webhook(request: Request, db: Session = Depends(get_db)):
+    payload = await request.json()
+    
+    transaction_status = payload.get("transaction_status")
+    order_id = payload.get("order_id")
+    fraud_status = payload.get("fraud_status")
+    
+    if transaction_status == "settlement" or (transaction_status == "capture" and fraud_status == "accept"):
+        try:
+            trx = db.query(TransactionRow).filter(TransactionRow.order_id == order_id).first()
+            if not trx or trx.status == "success":
+                return {"status": "ok"} 
+                
+            parts = order_id.split("-")
+            user_id = int(parts[1])
+            target_tier = parts[2]
+            
+            user = db.query(User).filter(User.id == user_id).first()
+            if user:
+                user.tier = target_tier
+                if target_tier == "pro":
+                    user.quota_limit = 18000
+                elif target_tier == "pro_max":
+                    user.quota_limit = 43200
+                elif target_tier == "lifetime":
+                    user.quota_limit = 9999999
+                    
+                trx.status = "success"
+                db.commit()
+                logger.info(f"Webhook Success: User {user_id} upgraded to {target_tier}!")
+        except Exception as e:
+            logger.error(f"Webhook processing error: {e}")
+            
+    return {"status": "ok"}
