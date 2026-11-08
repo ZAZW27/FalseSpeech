@@ -13,8 +13,6 @@ from sqlalchemy.sql import func
 
 from app.db.base import Base
 
-from app.db.base import Base
-
 
 class User(Base):
     __tablename__ = "users"
@@ -37,6 +35,7 @@ class User(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
 
 class DetectionSessionRow(Base):
     __tablename__ = "detection_sessions"
@@ -66,3 +65,14 @@ class DetectionSegmentRow(Base):
     is_fake = Column(Boolean, nullable=False, default=False)
     fake_prob = Column(Float, nullable=False, default=0.0)
     real_prob = Column(Float, nullable=False, default=0.0)
+
+
+class TransactionRow(Base):
+    __tablename__ = "transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    order_id = Column(String(100), unique=True, index=True, nullable=False)
+    amount = Column(Integer, nullable=False)
+    status = Column(String(20), default="pending", nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
