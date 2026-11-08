@@ -90,13 +90,13 @@ onBeforeUnmount(() => clearTimeout(redirectTimer))
     </template>
 
     <div
-      class="rounded-[28px] border border-navy-900/10 bg-white p-6 shadow-[0_20px_60px_rgba(7,20,51,0.08)] sm:p-[45px]"
+      class="rounded-[28px] border border-back-prime/10 bg-white p-6 shadow-[0_20px_60px_rgba(7,20,51,0.08)] sm:p-[45px]"
     >
       <p class="text-xs font-semibold uppercase tracking-[0.2em] text-brand-green">Get started</p>
-      <h1 class="mt-2.5 text-[28px] font-extrabold leading-tight text-navy-900 sm:text-[32px]">
+      <h1 class="mt-2.5 text-[28px] font-extrabold leading-tight text-back-prime sm:text-[32px]">
         Sign up for False Speech
       </h1>
-      <p class="mt-3 text-sm text-navy-900/70">New accounts start on the Free plan.</p>
+      <p class="mt-3 text-sm text-back-prime/70">New accounts start on the Free plan.</p>
 
       <form class="mt-8 flex flex-col gap-5" novalidate @submit.prevent="submit">
         <FormField
@@ -137,7 +137,7 @@ onBeforeUnmount(() => clearTimeout(redirectTimer))
 
         <p
           v-if="errorMessage"
-          class="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
+          class="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-400"
           role="alert"
         >
           {{ errorMessage }}
@@ -162,12 +162,12 @@ onBeforeUnmount(() => clearTimeout(redirectTimer))
         </BaseButton>
       </form>
 
-      <p class="mt-6 text-center text-sm text-navy-900/70">
+      <p class="mt-6 text-center text-sm text-back-prime/70">
         Already have an account?
-        <RouterLink to="/login" class="font-semibold text-brand-green hover:underline">Login here</RouterLink>
+        <RouterLink to="/login" class="font-semibold text-blue-600 hover:underline">Login here</RouterLink>
       </p>
 
-      <p class="mt-6 flex items-center justify-center gap-2 text-center text-[13px] text-navy-900/60">
+      <p class="mt-6 flex items-center justify-center gap-2 text-center text-[13px] text-back-prime/60">
         <span class="text-brand-green"><Icon name="shield" :size="16" /></span>
         Audio is processed in memory and never stored.
       </p>

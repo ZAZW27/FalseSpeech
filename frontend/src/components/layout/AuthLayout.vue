@@ -1,9 +1,11 @@
 <script setup>
+// Split screen for authentication pages.
+// Left: brand panel (slot "brand"), hidden below lg. Right: the form (default slot).
 </script>
 
 <template>
-  <div class="grid min-h-screen bg-surface-light lg:grid-cols-2">
-    <aside class="relative hidden overflow-hidden bg-gradient-to-br from-navy-800 via-navy-900 to-navy-950 lg:block">
+  <div class="grid min-h-screen bg-white lg:grid-cols-2">
+    <aside class="relative hidden overflow-hidden bg-gradient-to-br from-back-secondary via-back-prime to-back-prime lg:block">
       <slot name="brand" />
     </aside>
 

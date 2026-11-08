@@ -11,15 +11,15 @@ const toPercent = (value) =>
   value === null || !Number.isFinite(value) ? null : Math.round(Math.min(1, Math.max(0, value)) * 100)
 
 const bars = computed(() => [
-  { id: 'fake', label: 'Fake', percent: toPercent(props.fake), textClass: 'text-danger', fillClass: 'bg-gradient-to-t from-danger to-[#ff8a9f]' },
-  { id: 'real', label: 'Real', percent: toPercent(props.real), textClass: 'text-brand-green', fillClass: 'bg-gradient-to-t from-brand-green to-lime-300' },
+  { id: 'fake', label: 'Fake', percent: toPercent(props.fake), textClass: 'text-red-400', fillClass: 'bg-gradient-to-t from-red-400 to-red-300' },
+  { id: 'real', label: 'Real', percent: toPercent(props.real), textClass: 'text-brand-green', fillClass: 'bg-gradient-to-t from-brand-green to-secondary' },
 ])
 </script>
 
 <template>
-  <section class="flex flex-col rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+  <section class="flex flex-col rounded-3xl border border-back-secondary bg-back-secondary/40 p-6">
     <h2 class="text-lg font-bold">Confidence</h2>
-    <p class="mt-1 text-xs text-muted">Probability for the latest segment</p>
+    <p class="mt-1 text-xs text-secondary/70">Probability for the latest segment</p>
 
     <div class="mt-4 flex flex-1 items-end justify-center gap-10 sm:gap-16">
       <div v-for="bar in bars" :key="bar.id" class="flex flex-col items-center gap-3">

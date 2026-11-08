@@ -3,27 +3,32 @@ import BaseButton from "@/components/ui/buttons/BaseButton.vue";
 import PlanTag from "@/components/ui/badges/PlanTag.vue";
 import Icon from "@/components/ui/icons/Icon.vue";
 
+// dark: false (default) keeps the original light look, so existing users of this card change nothing.
 defineProps({
     plan: {type: Object, required: true},
+    dark: {type: Boolean, default: false},
 });
 </script>
 
 <template>
     <!--
-    - border + -mt-px/-ml-px: full grey border on every card; neighbours overlap
+    - border + -mt-px/-ml-px: full border on every card; neighbours overlap
       by 1px so shared edges stay a single line
     - plan-card: hooks the animated lime border (see <style> below)
   -->
     <article
         :class="[
-            'plan-card relative -ml-px -mt-px flex flex-col border border-zinc-300 px-8 py-12',
+            'plan-card relative -ml-px -mt-px flex flex-col border px-8 py-12',
             'transition-all duration-300 ease-out',
             'hover:z-20 hover:scale-[1.06] hover:shadow-[0_24px_60px_rgba(32,39,52,0.3)]',
             'lg:min-h-[640px]',
             'lg:[&:hover+*]:translate-x-4 lg:[&:has(+_*:hover)]:-translate-x-4',
+            dark ? 'border-white/10' : 'border-zinc-300',
             plan.featured
                 ? 'bg-gradient-to-br from-back-prime via-back-secondary to-[#2f6b5e] text-white'
-                : 'bg-white text-back-prime',
+                : dark
+                  ? 'bg-back-secondary text-white'
+                  : 'bg-white text-back-prime',
         ]"
     >
         <div class="flex items-center gap-3">
@@ -41,7 +46,9 @@ defineProps({
             <p
                 :class="[
                     'mt-1 text-sm',
-                    plan.featured ? 'text-muted' : 'text-back-prime/60',
+                    plan.featured || dark
+                        ? 'text-secondary/70'
+                        : 'text-back-prime/60',
                 ]"
             >
                 {{ plan.period }}
@@ -51,7 +58,7 @@ defineProps({
         <hr
             :class="[
                 'my-8 border-t',
-                plan.featured ? 'border-white/15' : 'border-back-prime/10',
+                plan.featured || dark ? 'border-white/15' : 'border-back-prime/10',
             ]"
         />
 
@@ -64,7 +71,7 @@ defineProps({
                 <span
                     :class="[
                         'flex size-[22px] shrink-0 items-center justify-center rounded-full',
-                        plan.featured
+                        plan.featured || dark
                             ? 'bg-brand-green/25 text-brand-green'
                             : 'bg-back-prime/10 text-back-prime',
                     ]"
@@ -75,16 +82,18 @@ defineProps({
             </li>
         </ul>
 
-        <!-- The CTA opens the dynamic route /detail/:id -->
-        <BaseButton
-            :to="{name: 'detail', params: {id: plan.id}}"
-            :variant="plan.cta.variant"
-            size="lg"
-            block
-            class="mt-10"
-        >
-            {{ plan.cta.label }}
-        </BaseButton>
+        <!-- Default CTA opens the dynamic route /detail/:id. Pages can replace it with the "cta" slot. -->
+        <slot name="cta">
+            <BaseButton
+                :to="{name: 'detail', params: {id: plan.id}}"
+                :variant="plan.cta.variant"
+                size="lg"
+                block
+                class="mt-10"
+            >
+                {{ plan.cta.label }}
+            </BaseButton>
+        </slot>
     </article>
 </template>
 

@@ -22,8 +22,8 @@ const result = heroResults.find((item) => item.id === 'human')
 <template>
   <div class="relative h-full min-h-screen">
     <!-- Background glows and ghost wordmark -->
-    <span class="pointer-events-none absolute -left-48 -top-44 size-[520px] rounded-full bg-[#1b5bff]/50 blur-[110px]" />
-    <span class="pointer-events-none absolute -bottom-28 -right-24 size-[480px] rounded-full bg-lime-400/40 blur-[120px]" />
+    <span class="pointer-events-none absolute -left-48 -top-44 size-[520px] rounded-full bg-back-secondary/60 blur-[110px]" />
+    <span class="pointer-events-none absolute -bottom-28 -right-24 size-[480px] rounded-full bg-brand-green/40 blur-[120px]" />
     <span
       class="pointer-events-none absolute -left-2 top-[150px] select-none text-[200px] font-extrabold uppercase leading-[0.85] tracking-tighter text-white/[0.04]"
       aria-hidden="true"
@@ -40,7 +40,7 @@ const result = heroResults.find((item) => item.id === 'human')
       <h2 class="mt-[90px] text-balance text-5xl font-extrabold leading-[1.05] tracking-tight xl:text-[64px]">
         {{ title }}
       </h2>
-      <p class="mt-8 max-w-[480px] text-lg leading-relaxed text-muted">{{ subtitle }}</p>
+      <p class="mt-8 max-w-[480px] text-lg leading-relaxed text-secondary/70">{{ subtitle }}</p>
 
       <div class="mt-12 w-[343px] max-w-full">
         <AnalysisCard :result="result" />
@@ -53,7 +53,7 @@ const result = heroResults.find((item) => item.id === 'human')
         :count="44"
         wobbles
         bar-width-class="w-2"
-        bar-class="bg-gradient-to-b from-lime-300 to-brand-green"
+        bar-class="bg-gradient-to-b from-secondary to-brand-green"
       />
     </div>
   </div>

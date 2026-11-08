@@ -9,10 +9,10 @@ defineProps({
 </script>
 
 <template>
-  <article class="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
+  <article class="rounded-2xl border border-back-secondary bg-back-secondary/40 p-5">
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0">
-        <p class="font-mono text-sm text-muted">{{ row.sessionId }}</p>
+        <p class="font-mono text-sm text-secondary/70">{{ row.sessionId }}</p>
         <p class="mt-1 text-sm font-semibold">{{ row.date }}</p>
       </div>
       <StatusChip :label="row.meta.label" :tone="row.meta.tone" />
@@ -20,11 +20,11 @@ defineProps({
 
     <dl class="mt-4 grid grid-cols-2 gap-4 text-sm">
       <div>
-        <dt class="text-[11px] font-semibold uppercase tracking-wider text-muted">Duration</dt>
+        <dt class="text-[11px] font-semibold uppercase tracking-wider text-secondary/70">Duration</dt>
         <dd class="mt-1 tabular-nums">{{ row.duration }}</dd>
       </div>
       <div>
-        <dt class="text-[11px] font-semibold uppercase tracking-wider text-muted">Fake Ratio</dt>
+        <dt class="text-[11px] font-semibold uppercase tracking-wider text-secondary/70">Fake Ratio</dt>
         <dd class="mt-1 flex items-center gap-3">
           <ConfidenceBar :value="row.fakePercent" :tone="row.meta.tone" height-class="h-1.5" class="max-w-[70px]" />
           <span class="text-xs font-semibold tabular-nums">{{ row.fakePercent }}%</span>

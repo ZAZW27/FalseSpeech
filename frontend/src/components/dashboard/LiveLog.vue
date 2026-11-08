@@ -19,19 +19,19 @@ watch(
 )
 
 const toneClass = {
-  fake: 'text-danger',
+  fake: 'text-red-400',
   real: 'text-brand-green',
-  warn: 'text-yellow-400',
-  muted: 'text-slate-400',
+  warn: 'text-secondary',
+  muted: 'text-secondary/70',
 }
 </script>
 
 <template>
-  <section class="flex flex-col overflow-hidden rounded-3xl border border-white/10 bg-black">
-    <header class="flex items-center justify-between border-b border-white/10 px-5 py-3">
-      <h2 class="font-mono text-xs uppercase tracking-[0.2em] text-slate-400">Live log</h2>
-      <span class="flex items-center gap-2 font-mono text-xs text-slate-400">
-        <span :class="['size-2 rounded-full', listening ? 'animate-pulse bg-brand-green' : 'bg-slate-600']" />
+  <section class="flex flex-col overflow-hidden rounded-3xl border border-back-secondary bg-black">
+    <header class="flex items-center justify-between border-b border-back-secondary px-5 py-3">
+      <h2 class="font-mono text-xs uppercase tracking-[0.2em] text-secondary/70">Live log</h2>
+      <span class="flex items-center gap-2 font-mono text-xs text-secondary/70">
+        <span :class="['size-2 rounded-full', listening ? 'animate-pulse bg-brand-green' : 'bg-secondary/40']" />
         {{ listening ? 'live' : 'idle' }}
       </span>
     </header>
@@ -43,10 +43,10 @@ const toneClass = {
       aria-live="off"
       tabindex="0"
     >
-      <p v-if="!logs.length" class="text-slate-500">Waiting for audio. Press start to begin.</p>
+      <p v-if="!logs.length" class="text-secondary/60">Waiting for audio. Press start to begin.</p>
 
       <p v-for="log in logs" :key="log.id" class="whitespace-pre-wrap break-words">
-        <span class="text-slate-600">[{{ log.time }}]</span>
+        <span class="text-secondary/40">[{{ log.time }}]</span>
         <span :class="toneClass[log.tone] ?? toneClass.muted"> {{ log.text }}</span>
       </p>
     </div>

@@ -6,6 +6,7 @@ const LoginPage = () => import('@/pages/login/page.vue')
 const RegisterPage = () => import('@/pages/register/page.vue')
 const DashboardPage = () => import('@/pages/dashboard/page.vue')
 const HistoryPage = () => import('@/pages/history/page.vue')
+const PlanPage = () => import('@/pages/plan/page.vue')
 const ProfilePage = () => import('@/pages/profile/page.vue')
 
 const routes = [
@@ -32,6 +33,7 @@ const routes = [
   { path: '/register', name: 'register', component: RegisterPage, meta: { title: 'Sign up' } },
   { path: '/dashboard', name: 'dashboard', component: DashboardPage, meta: { title: 'Dashboard' } },
   { path: '/history', name: 'history', component: HistoryPage, meta: { title: 'History' } },
+  { path: '/plan', name: 'plan', component: PlanPage, meta: { title: 'Plan' } },
   { path: '/profile', name: 'profile', component: ProfilePage, meta: { title: 'Profile' } },
 ]
 
