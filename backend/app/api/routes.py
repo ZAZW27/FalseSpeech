@@ -26,7 +26,8 @@ from app.schemas import (
     OTPVerifyReq
 )
 from app.service import auth, inference
-from app.service.email_service import send_otp_email
+from app.service.email_service import send_otp_email, send_invoice_email
+from app.service.invoice import generate_invoice_html
 from app.limiter import limiter
 from app.service.payment import create_payment_link
 
@@ -282,12 +283,22 @@ def downgrade(body: DowngradeReq, user: User = Depends(get_curr_user)):
 
 
 @router.get("/api/billing/history", response_model=list[Invoice], tags=["subscription"])
-def billing_history(user: User = Depends(get_curr_user)):
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Not implemented yet",
-    )
-
+def billing_history(user: User = Depends(get_curr_user), db: Session = Depends(get_db)):
+    trxs = db.query(TransactionRow).filter(
+        TransactionRow.user_id == user.id, 
+        TransactionRow.status == "success"
+    ).order_by(TransactionRow.created_at.desc()).all()
+    
+    return [
+        Invoice(
+            invoice_id=str(t.id),
+            amount_idr=t.amount,
+            status=t.status,
+            issued_at=t.created_at,
+            paid_at=t.created_at,
+            tier=t.order_id.split("-")[2]
+        ) for t in trxs
+    ]
 
 # Detection History -----------------------------------------------
 @router.get("/api/history", response_model=list[DetectionSession], tags=["history"])
@@ -375,8 +386,10 @@ async def midtrans_webhook(request: Request, db: Session = Depends(get_db)):
             target_tier = parts[2]
             
             user = db.query(User).filter(User.id == user_id).first()
+            
             if user:
                 user.tier = target_tier
+                
                 if target_tier == "pro":
                     user.quota_limit = 18000
                 elif target_tier == "pro_max":
@@ -385,7 +398,15 @@ async def midtrans_webhook(request: Request, db: Session = Depends(get_db)):
                     user.quota_limit = 9999999
                     
                 trx.status = "success"
+                
+                invoice_html = generate_invoice_html(user.name, order_id, trx.amount, target_tier)
+                trx.invoice_html = invoice_html
+                
                 db.commit()
+                
+                import asyncio
+                asyncio.create_task(send_invoice_email(user.email, invoice_html))
+                
                 logger.info(f"Webhook Success: User {user_id} upgraded to {target_tier}!")
         except Exception as e:
             logger.error(f"Webhook processing error: {e}")

@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text, 
 )
 from sqlalchemy.sql import func
 
@@ -80,3 +81,4 @@ class TransactionRow(Base):
     amount = Column(Integer, nullable=False)
     status = Column(String(20), default="pending", nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    invoice_html = Column(Text, nullable=True)

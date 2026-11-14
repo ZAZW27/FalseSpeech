@@ -29,3 +29,13 @@ async def send_otp_email(email: str, otp: str):
     )
     fm = FastMail(conf)
     await fm.send_message(message)
+
+async def send_invoice_email(email: str, invoice_html: str):
+    message = MessageSchema(
+        subject="Invoice Langganan False Speech",
+        recipients=[email],
+        body=invoice_html,
+        subtype="html"
+    )
+    fm = FastMail(conf)
+    await fm.send_message(message)
