@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text, 
 )
 from sqlalchemy.sql import func
 
@@ -27,6 +28,10 @@ class User(Base):
     quota_used = Column(Integer, nullable=False, default=0)
     quota_limit = Column(Integer, nullable=False, default=600)
     quota_reset_at = Column(DateTime(timezone=True), nullable=True)
+    
+    otp_code = Column(String(6), nullable=True)
+    otp_expires_at = Column(DateTime(timezone=True), nullable=True)
+    is_verified = Column(Boolean, default=False, nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(
@@ -76,3 +81,4 @@ class TransactionRow(Base):
     amount = Column(Integer, nullable=False)
     status = Column(String(20), default="pending", nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    invoice_html = Column(Text, nullable=True)

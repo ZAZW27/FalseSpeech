@@ -1,5 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
+import random
+from datetime import datetime, timedelta, timezone
+import uuid
+import logging
 
 from app.api.deps import get_curr_user
 from app.config import jwt_expires
@@ -19,14 +23,13 @@ from app.schemas import (
     DowngradeReq, DowngradeRes,
     Invoice,
     DetectionSession, DetectionSegment, DetectionSessionDetail,
+    OTPVerifyReq
 )
 from app.service import auth, inference
+from app.service.email_service import send_otp_email, send_invoice_email
+from app.service.invoice import generate_invoice_html
 from app.limiter import limiter
-
-import uuid
 from app.service.payment import create_payment_link
-import logging
-
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -57,24 +60,86 @@ def health():
     )
 
 
-# Auth -----------------------------------------------
-@router.post("/api/auth/register", response_model=RegisterRes, status_code=status.HTTP_201_CREATED, tags=["auth"])
-def register(body: RegisterReq, db: Session = Depends(get_db)):
-    try:
-        user = auth.daftar_user(
-            db,
-            name=body.name,
-            email=body.email,
-            phone=body.phone,
-            password=body.password,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+# Auth & OTP -----------------------------------------------
+@router.post("/api/auth/register/send-otp", tags=["auth"])
+async def register_send_otp(body: RegisterReq, db: Session = Depends(get_db)):
+    otp = str(random.randint(100000, 999999))
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
 
+    existing_user = auth.cari_user_by_email(db, body.email)
+    
+    if existing_user:
+        if existing_user.is_verified:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, 
+                detail="Email sudah terdaftar dan terverifikasi. Silakan login."
+            )
+
+        phone_owner = auth.cari_user_by_phone(db, body.phone)
+        if phone_owner and phone_owner.id != existing_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, 
+                detail="Nomor HP sudah terdaftar di akun lain."
+            )
+
+        existing_user.name = body.name
+        existing_user.phone = body.phone
+        existing_user.hashed_password = auth.hash_pass(body.password)
+        existing_user.otp_code = otp
+        existing_user.otp_expires_at = expires_at
+        db.commit()
+        
+        await send_otp_email(existing_user.email, otp)
+        return {"message": "Kode OTP baru telah dikirim ulang ke email Anda."}
+
+    if auth.cari_user_by_phone(db, body.phone):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, 
+            detail="Nomor HP sudah terdaftar."
+        )
+    
+    user = User(
+        name=body.name, 
+        email=body.email, 
+        phone=body.phone,
+        hashed_password=auth.hash_pass(body.password),
+        otp_code=otp,
+        otp_expires_at=expires_at,
+        is_verified=False
+    )
+    db.add(user)
+    db.commit()
+    
+    await send_otp_email(user.email, otp)
+    return {"message": "OTP berhasil dikirim ke email"}
+
+
+@router.post("/api/auth/register/verify-otp", response_model=RegisterRes, status_code=status.HTTP_201_CREATED, tags=["auth"])
+def register_verify_otp(body: OTPVerifyReq, db: Session = Depends(get_db)):
+    user = auth.cari_user_by_email(db, body.email)
+    
+    if not user or user.otp_code != body.otp_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Kode OTP salah"
+        )
+    
+    if user.otp_expires_at and datetime.now(timezone.utc) > user.otp_expires_at.replace(tzinfo=timezone.utc):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Kode OTP sudah kedaluwarsa"
+        )
+        
+    user.is_verified = True
+    user.otp_code = None
+    user.otp_expires_at = None
+    db.commit()
+    
     return RegisterRes(user_id=str(user.id), email=user.email)
 
+
 @router.post("/api/auth/login", response_model=LoginRes, tags=["auth"])
-@limiter.limit("5/minute")  # <-- Tetep pake limiter
+@limiter.limit("5/minute")
 def login(request: Request, body: LoginReq, db: Session = Depends(get_db)):
     token = auth.login_user(db, body.email_or_phone, body.password)
     if token is None:
@@ -167,6 +232,7 @@ def list_tiers():
         ),
     ]
 
+
 @router.post("/api/subscription/upgrade", response_model=UpgradeRes, tags=["subscription"])
 def upgrade(body: UpgradeReq, user: User = Depends(get_curr_user), db: Session = Depends(get_db)):
     prices = {
@@ -215,14 +281,24 @@ def downgrade(body: DowngradeReq, user: User = Depends(get_curr_user)):
         detail="Not implemented yet",
     )
 
-@router.get("/api/billing/history", response_model=list[Invoice],
-            tags=["subscription"])
-def billing_history(user: User = Depends(get_curr_user)):
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Not implemented yet",
-    )
 
+@router.get("/api/billing/history", response_model=list[Invoice], tags=["subscription"])
+def billing_history(user: User = Depends(get_curr_user), db: Session = Depends(get_db)):
+    trxs = db.query(TransactionRow).filter(
+        TransactionRow.user_id == user.id, 
+        TransactionRow.status == "success"
+    ).order_by(TransactionRow.created_at.desc()).all()
+    
+    return [
+        Invoice(
+            invoice_id=str(t.id),
+            amount_idr=t.amount,
+            status=t.status,
+            issued_at=t.created_at,
+            paid_at=t.created_at,
+            tier=t.order_id.split("-")[2]
+        ) for t in trxs
+    ]
 
 # Detection History -----------------------------------------------
 @router.get("/api/history", response_model=list[DetectionSession], tags=["history"])
@@ -251,7 +327,7 @@ def detection_history(
     return result
 
 
-@router.get("/api/history/{session_id}", response_model=DetectionSessionDetail,tags=["history"])
+@router.get("/api/history/{session_id}", response_model=DetectionSessionDetail, tags=["history"])
 def detection_history_detail(
         session_id: str,
         user: User = Depends(get_curr_user),
@@ -289,6 +365,8 @@ def detection_history_detail(
         ],
     )
 
+
+# Webhook -----------------------------------------------
 @router.post("/api/payment/webhook", tags=["subscription"])
 async def midtrans_webhook(request: Request, db: Session = Depends(get_db)):
     payload = await request.json()
@@ -308,8 +386,10 @@ async def midtrans_webhook(request: Request, db: Session = Depends(get_db)):
             target_tier = parts[2]
             
             user = db.query(User).filter(User.id == user_id).first()
+            
             if user:
                 user.tier = target_tier
+                
                 if target_tier == "pro":
                     user.quota_limit = 18000
                 elif target_tier == "pro_max":
@@ -318,7 +398,15 @@ async def midtrans_webhook(request: Request, db: Session = Depends(get_db)):
                     user.quota_limit = 9999999
                     
                 trx.status = "success"
+                
+                invoice_html = generate_invoice_html(user.name, order_id, trx.amount, target_tier)
+                trx.invoice_html = invoice_html
+                
                 db.commit()
+                
+                import asyncio
+                asyncio.create_task(send_invoice_email(user.email, invoice_html))
+                
                 logger.info(f"Webhook Success: User {user_id} upgraded to {target_tier}!")
         except Exception as e:
             logger.error(f"Webhook processing error: {e}")

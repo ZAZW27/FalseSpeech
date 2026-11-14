@@ -9,7 +9,7 @@ defineProps({
 
 <template>
     <article
-        class="w-full rounded-2xl border border-white/15 bg-white/5 p-6 shadow-[0_20px_60px_rgba(0,0,0,0.35)] backdrop-blur-md"
+        class="w-full rounded-2xl border-2 border-white/15 bg-white/5 p-6 shadow-[0_20px_40px_rgba(0,0,0,0.35)] backdrop-blur-md"
     >
         <p
             class="text-[11px] font-semibold uppercase tracking-[0.2em] text-white"

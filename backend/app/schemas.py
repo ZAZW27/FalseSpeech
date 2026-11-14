@@ -115,7 +115,6 @@ class WSDetectionResult(BaseModel):
 class WSError(BaseModel): 
     error: str
 
-
-
-
-
+class OTPVerifyReq(BaseModel):
+    email: EmailStr
+    otp_code: str

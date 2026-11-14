@@ -25,7 +25,7 @@ const percent = computed(() => toPercent(props.user?.quota_used, props.user?.quo
 <template>
   <div class="flex h-full flex-col px-5 py-8">
     <RouterLink to="/" class="flex items-center gap-2.5 px-2 text-xl font-bold text-white" @click="$emit('navigate')">
-      <Icon name="waveform" :size="32" />
+      <Icon name="logo" :size="32" />
       {{ brand.name }}
     </RouterLink>
 
@@ -67,9 +67,10 @@ const percent = computed(() => toPercent(props.user?.quota_used, props.user?.quo
           <p class="truncate text-sm font-semibold text-white">{{ user.name }}</p>
           <button
             type="button"
-            class="text-xs text-secondary/70 transition hover:text-secondary"
+            class="inline-flex items-center gap-1.5 text-xs text-secondary/70 transition hover:text-secondary"
             @click="$emit('logout')"
           >
+            <Icon name="logout" :size="12" />
             Log out
           </button>
         </div>
