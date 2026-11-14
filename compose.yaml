@@ -23,6 +23,8 @@ services:
         volumes:
             - ./backend:/home/appuser/app
         working_dir: /home/appuser/app
+        env_file:
+            - .env
         environment:
             DATABASE_URL: postgresql+psycopg://falsespeech:falsespeech_dev@db:5432/falsespeech
             MODEL_ID: nii-yamagishilab/wav2vec-large-anti-deepfake
