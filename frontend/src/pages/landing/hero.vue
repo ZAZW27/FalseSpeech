@@ -1,13 +1,16 @@
 <script setup>
+import {useRouter} from "vue-router";
 import {hero} from "@/assets/data/hero";
 import {heroResults} from "@/assets/data/heroResults";
-import {useListeningSession} from "@/assets/js/useListeningSession";
 import LiveBadge from "@/components/ui/badges/LiveBadge.vue";
 import PlayButton from "@/components/ui/buttons/PlayButton.vue";
 import AnalysisCard from "@/components/ui/cards/AnalysisCard.vue";
 import WaveformBars from "@/components/ui/charts/WaveformBars.vue";
 
-const {start} = useListeningSession();
+const router = useRouter();
+
+// The dashboard guards itself: without a token AppLayout redirects to /login.
+const goToDashboard = () => router.push("/dashboard");
 
 // Desktop placement for each result card (data-driven, index matches heroResults).
 const cardPositions = [
@@ -57,7 +60,7 @@ const cardPositions = [
                 </p>
 
                 <div class="mt-10 flex items-center gap-5">
-                    <PlayButton @click="start" />
+                    <PlayButton @click="goToDashboard" />
                     <div>
                         <p class="text-xl font-bold md:text-2xl">
                             {{ hero.cta.label }}
@@ -78,6 +81,7 @@ const cardPositions = [
                     glow
                     wobbles
                     bar-width-class="w-1.5 lg:w-2"
+                    bar-class="bg-gradient-to-b from-secondary to-brand-green"
                 />
             </div>
 

@@ -33,7 +33,7 @@ const result = heroResults.find((item) => item.id === 'human')
 
     <div class="relative flex h-full min-h-screen flex-col px-12 py-14 xl:px-[72px]">
       <RouterLink to="/" class="flex w-fit items-center gap-2.5 text-2xl font-bold text-white">
-        <Icon name="waveform" :size="32" />
+        <Icon name="logo" :size="32" />
         {{ brand.name }}
       </RouterLink>
 

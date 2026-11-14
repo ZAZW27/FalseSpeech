@@ -74,12 +74,16 @@ const s = computed(() => sizes[props.size]);
         />
         <span
             :class="[
-                'absolute flex items-center justify-center rounded-full bg-linear-to-br from-[#c0f38a] via-[#b6dd8c] to-[#d8ebc4] text-navy-900 transition group-hover:scale-105',
+                'absolute flex items-center justify-center rounded-full bg-linear-to-br from-[#c0f38a] via-[#b6dd8c] to-[#d8ebc4] text-mist-800/80 transition group-hover:scale-105',
                 s.disc,
                 s.glow,
             ]"
         >
-            <Icon :name="playing ? 'stop' : 'play'" :size="s.icon" />
+            <Icon
+                :class="['translate-x-0.75']"
+                :name="playing ? 'stop' : 'play'"
+                :size="s.icon"
+            />
         </span>
     </button>
 </template>

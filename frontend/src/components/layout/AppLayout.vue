@@ -82,7 +82,7 @@ onMounted(loadUser)
       class="sticky top-0 z-30 flex h-[72px] items-center justify-between border-b border-back-secondary bg-back-prime/90 px-5 backdrop-blur lg:hidden"
     >
       <RouterLink to="/" class="flex items-center gap-2.5 text-lg font-bold">
-        <Icon name="waveform" :size="28" />
+        <Icon name="logo" :size="28" />
         {{ brand.name }}
       </RouterLink>
       <IconButton icon="menu" label="Open menu" @click="drawerOpen = true" />

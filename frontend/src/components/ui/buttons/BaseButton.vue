@@ -29,7 +29,7 @@ const tag = computed(() => {
 
 const variants = {
     primary:
-        "bg-gradient-to-r from-lime-300 to-lime-400 text-back-prime hover:brightness-105 shadow-[0_8px_24px_rgba(182,242,60,0.25)]",
+        "bg-gradient-to-r from-[#E0F8C7] to-[#B7D894] text-back-prime hover:brightness-105 shadow-[0_8px_24px_rgba(182,242,60,0.25)]",
     dark: "bg-back-prime text-white hover:bg-back-secondary",
     outline: "border border-back-prime text-back-prime hover:bg-back-prime/5",
     outlineLight: "border border-white/25 text-white hover:bg-white/10",
