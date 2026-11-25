@@ -3,11 +3,16 @@ export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:7860'
 export const WS_BASE = API_BASE.replace(/^http/, 'ws')
 export const TOKEN_KEY = 'access_token'
 
-export const getToken = () => {
+const isTokenExpired = (token) => {
   try {
-    return localStorage.getItem(TOKEN_KEY)
+    const parts = token.split('.')
+    if (parts.length !== 3) return true
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const payload = JSON.parse(atob(base64))
+    if (typeof payload.exp !== 'number') return false
+    return Date.now() >= payload.exp * 1000
   } catch {
-    return null
+    return true
   }
 }
 
@@ -16,6 +21,21 @@ export const clearToken = () => {
     localStorage.removeItem(TOKEN_KEY)
   } catch {
     // Storage can be unavailable (private mode). Nothing to clear then.
+  }
+}
+
+export const getToken = () => {
+  try {
+    const token = localStorage.getItem(TOKEN_KEY)
+    if (!token) return null
+    // Auto-clear expired JWTs client-side so stale sessions redirect to /login immediately.
+    if (isTokenExpired(token)) {
+      clearToken()
+      return null
+    }
+    return token
+  } catch {
+    return null
   }
 }
 

@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
-import random
+import hmac
+import secrets
 from datetime import datetime, timedelta, timezone
+import random
 import uuid
 import logging
 
@@ -19,13 +22,17 @@ from app.schemas import (
     RegisterReq, RegisterRes,
     LoginReq, LoginRes,
     UserPub, UpdateProfileRequest,
+    ChangePasswordReq, ChangePasswordRes,
     Tier, UpgradeReq, UpgradeRes,
     DowngradeReq, DowngradeRes,
     Invoice,
     DetectionSession, DetectionSegment, DetectionSessionDetail,
-    OTPVerifyReq
+    OTPVerifyReq,
+    ForgotPasswordReq, ResetPasswordReq,
 )
+from app.security.passwords import hash_pass, verify_pass
 from app.service import auth, inference
+from app.service.conn_manager import manager
 from app.service.email_service import send_otp_email, send_invoice_email
 from app.service.invoice import generate_invoice_html
 from app.limiter import limiter
@@ -33,6 +40,11 @@ from app.service.payment import create_payment_link
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Urutan tier dari terendah ke tertinggi, dan kuota harian (detik) tiap tier.
+# Angka kuota sama dengan yang dipakai webhook Midtrans dan /api/tiers.
+TIER_ORDER = {"free": 0, "pro": 1, "pro_max": 2, "lifetime": 3}
+TIER_QUOTA = {"free": 600, "pro": 18000, "pro_max": 43200, "lifetime": 9999999}
 
 
 # Helpers -----------------------------------------------
@@ -46,7 +58,18 @@ def _user_pub(user: User) -> UserPub:
         quota_used=user.quota_used,
         quota_limit=user.quota_limit,
         quota_reset_at=user.quota_reset_at,
+        subscription_expires_at=user.subscription_expires_at,
     )
+
+
+def _otp_expired(user: User) -> bool:
+    # Kolom DateTime kadang kembali tanpa tzinfo, anggap UTC.
+    if user.otp_expires_at is None:
+        return True
+    expires_at = user.otp_expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) > expires_at
 
 
 # Health -----------------------------------------------
@@ -138,6 +161,53 @@ def register_verify_otp(body: OTPVerifyReq, db: Session = Depends(get_db)):
     return RegisterRes(user_id=str(user.id), email=user.email)
 
 
+@router.post("/api/auth/forgot-password", tags=["auth"])
+@limiter.limit("3/minute")
+async def forgot_password(request: Request, body: ForgotPasswordReq, db: Session = Depends(get_db)):
+    user = auth.cari_user_by_email(db, body.email)
+
+    # Hanya akun terverifikasi yang boleh reset password.
+    if user and user.is_verified:
+        otp = str(secrets.randbelow(900000) + 100000)
+        user.otp_code = otp
+        user.otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        db.commit()
+
+        try:
+            await send_otp_email(user.email, otp)
+        except Exception as e:
+            logger.error(f"Gagal mengirim OTP reset password: {e}")
+
+    # Respons selalu sama, supaya orang lain tidak bisa mengecek email mana yang terdaftar.
+    return {"message": "Jika email terdaftar, kode OTP telah dikirim."}
+
+
+@router.post("/api/auth/reset-password", tags=["auth"])
+@limiter.limit("5/minute")
+def reset_password(request: Request, body: ResetPasswordReq, db: Session = Depends(get_db)):
+    invalid = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Kode OTP salah atau sudah kedaluwarsa",
+    )
+
+    user = auth.cari_user_by_email(db, body.email)
+    if not user or not user.is_verified or not user.otp_code:
+        raise invalid
+
+    if not hmac.compare_digest(user.otp_code, body.otp_code):
+        raise invalid
+
+    if _otp_expired(user):
+        raise invalid
+
+    user.hashed_password = auth.hash_pass(body.new_password)
+    user.otp_code = None
+    user.otp_expires_at = None
+    db.commit()
+
+    return {"message": "Password berhasil diubah. Silakan login."}
+
+
 @router.post("/api/auth/login", response_model=LoginRes, tags=["auth"])
 @limiter.limit("5/minute")
 def login(request: Request, body: LoginReq, db: Session = Depends(get_db)):
@@ -181,6 +251,29 @@ def update_me(
     db.commit()
     db.refresh(user)
     return _user_pub(user)
+
+
+@router.patch("/api/users/change-password", response_model=ChangePasswordRes, tags=["user"])
+def change_password(
+    body: ChangePasswordReq,
+    user: User = Depends(get_curr_user),
+    db: Session = Depends(get_db),
+):
+    if not verify_pass(body.current_password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Kata sandi saat ini salah",
+        )
+    if body.current_password == body.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Kata sandi baru harus berbeda dari kata sandi saat ini",
+        )
+
+    user.hashed_password = hash_pass(body.new_password)
+    db.commit()
+    logger.info(f"Password changed for user {user.id}")
+    return ChangePasswordRes(success=True, message="Kata sandi berhasil diperbarui")
 
 
 # Tiers and Subscription -----------------------------------------------
@@ -275,11 +368,83 @@ def upgrade(body: UpgradeReq, user: User = Depends(get_curr_user), db: Session =
 
 
 @router.post("/api/subscription/downgrade", response_model=DowngradeRes, tags=["subscription"])
-def downgrade(body: DowngradeReq, user: User = Depends(get_curr_user)):
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Not implemented yet",
+def downgrade(body: DowngradeReq, user: User = Depends(get_curr_user), db: Session = Depends(get_db)):
+    if body.target_tier not in TIER_ORDER:
+        raise HTTPException(status_code=400, detail="Paket tidak valid")
+
+    current_rank = TIER_ORDER.get(user.tier, 0)
+    target_rank = TIER_ORDER[body.target_tier]
+
+    if target_rank >= current_rank:
+        raise HTTPException(
+            status_code=400,
+            detail="Paket tujuan harus lebih rendah dari paket Anda saat ini",
+        )
+
+    # Countermeasure: prevent tier/quota downgrade while an active WebSocket stream is open
+    if user.id in manager.active_connections:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Hentikan sesi pemantauan aktif sebelum menurunkan paket",
+        )
+
+    previous_tier = user.tier
+    adjustment_cost_idr = 0  # SC-07: no prorated fee on downgrade
+    user.tier = body.target_tier
+    user.quota_limit = TIER_QUOTA[body.target_tier]
+    if body.target_tier == "free":
+        user.subscription_expires_at = None
+    db.commit()
+
+    logger.info(
+        f"Downgrade: user {user.id} {previous_tier} -> {body.target_tier} "
+        f"(quota={user.quota_limit}, adjustment_cost={adjustment_cost_idr})"
     )
+    return DowngradeRes(
+        success=True,
+        effective_at=datetime.now(timezone.utc),
+        previous_tier=previous_tier,
+        new_tier=user.tier,
+        new_quota_limit=user.quota_limit,
+        adjustment_cost_idr=adjustment_cost_idr,
+    )
+
+
+@router.post("/api/subscription/extend", response_model=UpgradeRes, tags=["subscription"])
+def extend_subscription(user: User = Depends(get_curr_user), db: Session = Depends(get_db)):
+    """UC-05 / RF-04: Generates a Midtrans payment link to extend an active Pro / Pro Max plan by 30 days."""
+    monthly_prices = {
+        "pro": 49000,
+        "pro_max": 99000,
+    }
+    if user.tier not in monthly_prices:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Perpanjangan bulanan hanya tersedia untuk paket Pro atau Pro Max",
+        )
+
+    amount = monthly_prices[user.tier]
+    order_id = f"FS-{user.id}-{user.tier}-{uuid.uuid4().hex[:6]}"
+
+    try:
+        payment_data = create_payment_link(
+            order_id=order_id,
+            amount=amount,
+            tier_name=user.tier,
+            user_email=user.email,
+        )
+        new_transaction = TransactionRow(
+            user_id=user.id,
+            order_id=order_id,
+            amount=amount,
+            status="pending",
+        )
+        db.add(new_transaction)
+        db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return UpgradeRes(payment_url=payment_data["redirect_url"])
 
 
 @router.get("/api/billing/history", response_model=list[Invoice], tags=["subscription"])
@@ -292,6 +457,7 @@ def billing_history(user: User = Depends(get_curr_user), db: Session = Depends(g
     return [
         Invoice(
             invoice_id=str(t.id),
+            order_id=t.order_id,
             amount_idr=t.amount,
             status=t.status,
             issued_at=t.created_at,
@@ -299,6 +465,22 @@ def billing_history(user: User = Depends(get_curr_user), db: Session = Depends(g
             tier=t.order_id.split("-")[2]
         ) for t in trxs
     ]
+
+
+@router.get("/api/billing/invoice/{order_id}", response_class=HTMLResponse, tags=["subscription"])
+def get_invoice(order_id: str, user: User = Depends(get_curr_user), db: Session = Depends(get_db)):
+    # Filter user_id di query: transaksi milik user lain sama saja dengan tidak ada (404).
+    trx = (
+        db.query(TransactionRow)
+        .filter(TransactionRow.order_id == order_id)
+        .filter(TransactionRow.user_id == user.id)
+        .first()
+    )
+    if trx is None or not trx.invoice_html:
+        raise HTTPException(status_code=404, detail="Invoice tidak ditemukan")
+
+    return HTMLResponse(content=trx.invoice_html, headers={"Cache-Control": "private, no-store"})
+
 
 # Detection History -----------------------------------------------
 @router.get("/api/history", response_model=list[DetectionSession], tags=["history"])
@@ -392,10 +574,23 @@ async def midtrans_webhook(request: Request, db: Session = Depends(get_db)):
                 
                 if target_tier == "pro":
                     user.quota_limit = 18000
+                    base_dt = (
+                        user.subscription_expires_at
+                        if user.subscription_expires_at and user.subscription_expires_at > datetime.now(timezone.utc)
+                        else datetime.now(timezone.utc)
+                    )
+                    user.subscription_expires_at = base_dt + timedelta(days=30)
                 elif target_tier == "pro_max":
                     user.quota_limit = 43200
+                    base_dt = (
+                        user.subscription_expires_at
+                        if user.subscription_expires_at and user.subscription_expires_at > datetime.now(timezone.utc)
+                        else datetime.now(timezone.utc)
+                    )
+                    user.subscription_expires_at = base_dt + timedelta(days=30)
                 elif target_tier == "lifetime":
                     user.quota_limit = 9999999
+                    user.subscription_expires_at = None
                     
                 trx.status = "success"
                 

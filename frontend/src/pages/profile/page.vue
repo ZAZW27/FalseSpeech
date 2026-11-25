@@ -5,6 +5,7 @@ import {authFetch, clearToken} from "@/assets/js/api";
 import {getInitials} from "@/assets/js/format";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import BaseButton from "@/components/ui/buttons/BaseButton.vue";
+import BaseModal from "@/components/ui/modals/BaseModal.vue";
 import FormField from "@/components/ui/inputs/FormField.vue";
 
 const TIER_LABELS = {
@@ -22,6 +23,64 @@ const isSaving = ref(false);
 const isLoggingOut = ref(false);
 const successMessage = ref("");
 const errorMessage = ref("");
+
+// Change password state (RF-02)
+const pwForm = ref({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+});
+const isChangingPassword = ref(false);
+const pwSuccessMessage = ref("");
+const pwErrorMessage = ref("");
+
+const changePassword = async () => {
+    if (isChangingPassword.value) return;
+    pwSuccessMessage.value = "";
+    pwErrorMessage.value = "";
+
+    if (!pwForm.value.currentPassword) {
+        pwErrorMessage.value = "Current password is required.";
+        return;
+    }
+    if (pwForm.value.newPassword.length < 8) {
+        pwErrorMessage.value = "New password must be at least 8 characters.";
+        return;
+    }
+    if (pwForm.value.newPassword !== pwForm.value.confirmPassword) {
+        pwErrorMessage.value = "New password and confirmation do not match.";
+        return;
+    }
+
+    isChangingPassword.value = true;
+    try {
+        const response = await authFetch("/api/users/change-password", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                current_password: pwForm.value.currentPassword,
+                new_password: pwForm.value.newPassword,
+            }),
+        });
+        if (response.status === 401) {
+            handleUnauthorized();
+            return;
+        }
+        if (!response.ok) {
+            pwErrorMessage.value = await readError(
+                response,
+                "Could not update your password. Please try again.",
+            );
+            return;
+        }
+        pwForm.value = { currentPassword: "", newPassword: "", confirmPassword: "" };
+        pwSuccessMessage.value = "Your password has been updated.";
+    } catch {
+        pwErrorMessage.value = "Could not reach the server. Please try again.";
+    } finally {
+        isChangingPassword.value = false;
+    }
+};
 
 // Editable copy of the profile. The server value stays in `user`.
 const form = ref({name: "", phone: ""});
@@ -138,9 +197,16 @@ const saveChanges = async () => {
     }
 };
 
+const logoutConfirmOpen = ref(false);
+
+const askLogout = () => {
+    logoutConfirmOpen.value = true;
+};
+
 const logout = async () => {
     if (isLoggingOut.value) return;
     isLoggingOut.value = true;
+    logoutConfirmOpen.value = false;
 
     // Tokens are stateless, so the server call is best effort only.
     try {
@@ -225,7 +291,7 @@ onMounted(loadUser);
                     class="mt-6 w-full"
                     variant="outlineLight"
                     :disabled="isLoggingOut"
-                    @click="logout"
+                    @click="askLogout"
                 >
                     {{ isLoggingOut ? "Logging out..." : "Log out" }}
                 </BaseButton>
@@ -300,7 +366,96 @@ onMounted(loadUser);
                         </BaseButton>
                     </div>
                 </form>
+
+                <!-- Change Password (RF-02) -->
+                <div class="mt-10 border-t border-white/10 pt-8">
+                    <h2 class="text-lg font-semibold">Change Password</h2>
+                    <p class="mt-1 text-sm text-muted">
+                        Update your account password. Must be at least 8 characters.
+                    </p>
+
+                    <form
+                        class="mt-6 flex flex-col gap-5"
+                        novalidate
+                        @submit.prevent="changePassword"
+                    >
+                        <FormField
+                            id="profile-current-password"
+                            v-model="pwForm.currentPassword"
+                            label="Current Password"
+                            type="password"
+                            placeholder="Enter current password"
+                            autocomplete="current-password"
+                        />
+
+                        <FormField
+                            id="profile-new-password"
+                            v-model="pwForm.newPassword"
+                            label="New Password"
+                            type="password"
+                            placeholder="At least 8 characters"
+                            autocomplete="new-password"
+                        />
+
+                        <FormField
+                            id="profile-confirm-password"
+                            v-model="pwForm.confirmPassword"
+                            label="Confirm New Password"
+                            type="password"
+                            placeholder="Re-enter new password"
+                            autocomplete="new-password"
+                        />
+
+                        <p
+                            v-if="pwSuccessMessage"
+                            class="rounded-xl border border-lime-400/30 bg-lime-400/10 px-4 py-3 text-sm font-medium text-lime-400"
+                            role="status"
+                        >
+                            {{ pwSuccessMessage }}
+                        </p>
+
+                        <p
+                            v-if="pwErrorMessage"
+                            class="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
+                            role="alert"
+                        >
+                            {{ pwErrorMessage }}
+                        </p>
+
+                        <div class="flex justify-end">
+                            <BaseButton
+                                class="w-full sm:w-auto"
+                                :disabled="isChangingPassword"
+                                @click="changePassword"
+                            >
+                                {{ isChangingPassword ? "Updating..." : "Update Password" }}
+                            </BaseButton>
+                        </div>
+                    </form>
+                </div>
             </section>
         </div>
+
+        <BaseModal
+            v-model="logoutConfirmOpen"
+            title="Log out of False Speech?"
+            maxWidth="max-w-md"
+        >
+            <p class="text-sm text-white/75">
+                Are you sure you want to log out? You will need to sign in again
+                to access your dashboard, live audio detection, and history.
+            </p>
+            <div class="mt-6 flex justify-end gap-3">
+                <BaseButton
+                    variant="outlineLight"
+                    @click="logoutConfirmOpen = false"
+                >
+                    Cancel
+                </BaseButton>
+                <BaseButton :disabled="isLoggingOut" @click="logout">
+                    {{ isLoggingOut ? "Logging out..." : "Log out" }}
+                </BaseButton>
+            </div>
+        </BaseModal>
     </AppLayout>
 </template>

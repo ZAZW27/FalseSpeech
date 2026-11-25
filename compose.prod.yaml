@@ -1,0 +1,24 @@
+# Production Docker Compose overlay with Nginx TLS 1.2+/WSS termination (NFR-03 & NFR-06)
+# Usage: docker compose -f compose.yaml -f compose.prod.yaml up -d
+
+services:
+  antideepfake-server:
+    restart: unless-stopped
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 7860
+      --workers 1
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - antideepfake-server
+      - frontend

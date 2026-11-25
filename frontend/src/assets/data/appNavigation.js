@@ -3,4 +3,5 @@ export const appLinks = [
   { label: 'Dashboard', to: '/dashboard', icon: 'dashboard' },
   { label: 'History', to: '/history', icon: 'history' },
   { label: 'Subscription', to: '/plan', icon: 'card' },
+  { label: 'Profile', to: '/profile', icon: 'profile' },
 ]

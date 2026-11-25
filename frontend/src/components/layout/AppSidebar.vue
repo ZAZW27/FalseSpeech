@@ -43,8 +43,8 @@ const percent = computed(() => toPercent(props.user?.quota_used, props.user?.quo
       </RouterLink>
     </nav>
 
-    <div v-if="user" class="mt-auto flex flex-col gap-6 pt-8">
-      <div class="rounded-2xl border border-back-secondary bg-back-secondary/40 p-5">
+    <div class="mt-auto flex flex-col gap-6 pt-8">
+      <div v-if="user" class="rounded-2xl border border-back-secondary bg-back-secondary/40 p-5">
         <div class="flex items-center justify-between">
           <span class="text-sm font-semibold text-white">{{ planLabel }}</span>
           <PlanTag label="ACTIVE" />
@@ -56,15 +56,22 @@ const percent = computed(() => toPercent(props.user?.quota_used, props.user?.quo
         <ConfidenceBar :value="percent" tone="lime" class="mt-3" />
       </div>
 
-      <div class="flex items-center gap-3 px-1">
-        <span
+      <div v-if="user" class="flex items-center gap-3 px-1">
+        <RouterLink
+          to="/profile"
           class="flex size-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-back-secondary to-brand-green text-sm font-bold text-white"
-          aria-hidden="true"
+          @click="$emit('navigate')"
         >
           {{ getInitials(user.name) }}
-        </span>
+        </RouterLink>
         <div class="min-w-0">
-          <p class="truncate text-sm font-semibold text-white">{{ user.name }}</p>
+          <RouterLink
+            to="/profile"
+            class="block truncate text-sm font-semibold text-white hover:text-brand-green"
+            @click="$emit('navigate')"
+          >
+            {{ user.name }}
+          </RouterLink>
           <button
             type="button"
             class="inline-flex items-center gap-1.5 text-xs text-secondary/70 transition hover:text-secondary"
@@ -75,6 +82,16 @@ const percent = computed(() => toPercent(props.user?.quota_used, props.user?.quo
           </button>
         </div>
       </div>
+
+      <button
+        v-else
+        type="button"
+        class="flex h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-medium text-secondary/80 transition hover:bg-white/10 hover:text-white"
+        @click="$emit('logout')"
+      >
+        <Icon name="logout" :size="14" />
+        Log out
+      </button>
     </div>
   </div>
 </template>
