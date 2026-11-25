@@ -36,7 +36,7 @@ from app.service.conn_manager import manager
 from app.service.email_service import send_otp_email, send_invoice_email
 from app.service.invoice import generate_invoice_html
 from app.limiter import limiter
-from app.service.payment import create_payment_link
+from app.service.payment import create_payment_link, get_transaction_status
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -147,10 +147,10 @@ def register_verify_otp(body: OTPVerifyReq, db: Session = Depends(get_db)):
             detail="Kode OTP salah"
         )
     
-    if user.otp_expires_at and datetime.now(timezone.utc) > user.otp_expires_at.replace(tzinfo=timezone.utc):
+    if _otp_expired(user):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
-            detail="Kode OTP sudah kedaluwarsa"
+            detail="Kode OTP sudah kedaluwarsa. Silakan kirim ulang kode OTP."
         )
         
     user.is_verified = True
@@ -234,7 +234,8 @@ def logout(user: User = Depends(get_curr_user)):
 
 # User -----------------------------------------------
 @router.get("/api/users/me", response_model=UserPub, tags=["user"])
-def get_me(user: User = Depends(get_curr_user)):
+def get_me(user: User = Depends(get_curr_user), db: Session = Depends(get_db)):
+    _sync_user_pending_transactions(db, user)
     return _user_pub(user)
 
 
@@ -449,6 +450,7 @@ def extend_subscription(user: User = Depends(get_curr_user), db: Session = Depen
 
 @router.get("/api/billing/history", response_model=list[Invoice], tags=["subscription"])
 def billing_history(user: User = Depends(get_curr_user), db: Session = Depends(get_db)):
+    _sync_user_pending_transactions(db, user)
     trxs = db.query(TransactionRow).filter(
         TransactionRow.user_id == user.id, 
         TransactionRow.status == "success"
@@ -548,62 +550,118 @@ def detection_history_detail(
     )
 
 
-# Webhook -----------------------------------------------
+# Payment Finalization & Webhook -----------------------------------------------
+def _is_midtrans_paid(transaction_status: str | None, fraud_status: str | None) -> bool:
+    return transaction_status == "settlement" or (
+        transaction_status == "capture" and fraud_status == "accept"
+    )
+
+
+def _apply_paid_transaction(db: Session, trx: TransactionRow, user: User | None = None) -> bool:
+    """Idempotently upgrades the user's tier, quota, expiry, and generates invoice HTML."""
+    if not trx or trx.status == "success":
+        return False
+
+    parts = trx.order_id.split("-")
+    if len(parts) < 3:
+        return False
+    user_id = int(parts[1])
+    target_tier = parts[2]
+
+    if user is None:
+        user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return False
+
+    now_utc = datetime.now(timezone.utc)
+    user.tier = target_tier
+
+    if target_tier == "pro":
+        user.quota_limit = 18000
+        exp = user.subscription_expires_at
+        if exp and exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        base_dt = exp if (exp and exp > now_utc) else now_utc
+        user.subscription_expires_at = base_dt + timedelta(days=30)
+    elif target_tier == "pro_max":
+        user.quota_limit = 43200
+        exp = user.subscription_expires_at
+        if exp and exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        base_dt = exp if (exp and exp > now_utc) else now_utc
+        user.subscription_expires_at = base_dt + timedelta(days=30)
+    elif target_tier == "lifetime":
+        user.quota_limit = 9999999
+        user.subscription_expires_at = None
+
+    trx.status = "success"
+    invoice_html = generate_invoice_html(user.name, trx.order_id, trx.amount, target_tier)
+    trx.invoice_html = invoice_html
+    db.commit()
+    db.refresh(user)
+
+    try:
+        import asyncio
+        loop = asyncio.get_running_loop()
+        loop.create_task(send_invoice_email(user.email, invoice_html))
+    except RuntimeError:
+        # Called from a sync route threadpool; send invoice email in a background thread.
+        import threading, asyncio
+        threading.Thread(
+            target=lambda: asyncio.run(send_invoice_email(user.email, invoice_html)),
+            daemon=True,
+        ).start()
+
+    logger.info(f"Payment Finalized: User {user_id} upgraded to {target_tier} (order={trx.order_id})")
+    return True
+
+
+def _sync_user_pending_transactions(db: Session, user: User) -> int:
+    """Checks Midtrans Status API for any pending transactions belonging to this user."""
+    pending_trxs = (
+        db.query(TransactionRow)
+        .filter(TransactionRow.user_id == user.id, TransactionRow.status == "pending")
+        .order_by(TransactionRow.created_at.asc())
+        .all()
+    )
+    if not pending_trxs:
+        return 0
+
+    finalized = 0
+    for trx in pending_trxs:
+        status_res = get_transaction_status(trx.order_id)
+        if not status_res:
+            continue
+        tx_status = status_res.get("transaction_status")
+        fraud_status = status_res.get("fraud_status")
+        if _is_midtrans_paid(tx_status, fraud_status):
+            if _apply_paid_transaction(db, trx, user=user):
+                finalized += 1
+        elif tx_status in ("deny", "cancel", "expire", "failure"):
+            trx.status = "failed"
+            db.commit()
+    return finalized
+
+
+@router.post("/api/payment/sync", tags=["subscription"])
+def sync_my_payments(user: User = Depends(get_curr_user), db: Session = Depends(get_db)):
+    synced = _sync_user_pending_transactions(db, user)
+    return {"synced": synced, "user": _user_pub(user)}
+
+
 @router.post("/api/payment/webhook", tags=["subscription"])
 async def midtrans_webhook(request: Request, db: Session = Depends(get_db)):
     payload = await request.json()
-    
+
     transaction_status = payload.get("transaction_status")
     order_id = payload.get("order_id")
     fraud_status = payload.get("fraud_status")
-    
-    if transaction_status == "settlement" or (transaction_status == "capture" and fraud_status == "accept"):
+
+    if _is_midtrans_paid(transaction_status, fraud_status):
         try:
             trx = db.query(TransactionRow).filter(TransactionRow.order_id == order_id).first()
-            if not trx or trx.status == "success":
-                return {"status": "ok"} 
-                
-            parts = order_id.split("-")
-            user_id = int(parts[1])
-            target_tier = parts[2]
-            
-            user = db.query(User).filter(User.id == user_id).first()
-            
-            if user:
-                user.tier = target_tier
-                
-                if target_tier == "pro":
-                    user.quota_limit = 18000
-                    base_dt = (
-                        user.subscription_expires_at
-                        if user.subscription_expires_at and user.subscription_expires_at > datetime.now(timezone.utc)
-                        else datetime.now(timezone.utc)
-                    )
-                    user.subscription_expires_at = base_dt + timedelta(days=30)
-                elif target_tier == "pro_max":
-                    user.quota_limit = 43200
-                    base_dt = (
-                        user.subscription_expires_at
-                        if user.subscription_expires_at and user.subscription_expires_at > datetime.now(timezone.utc)
-                        else datetime.now(timezone.utc)
-                    )
-                    user.subscription_expires_at = base_dt + timedelta(days=30)
-                elif target_tier == "lifetime":
-                    user.quota_limit = 9999999
-                    user.subscription_expires_at = None
-                    
-                trx.status = "success"
-                
-                invoice_html = generate_invoice_html(user.name, order_id, trx.amount, target_tier)
-                trx.invoice_html = invoice_html
-                
-                db.commit()
-                
-                import asyncio
-                asyncio.create_task(send_invoice_email(user.email, invoice_html))
-                
-                logger.info(f"Webhook Success: User {user_id} upgraded to {target_tier}!")
+            _apply_paid_transaction(db, trx)
         except Exception as e:
             logger.error(f"Webhook processing error: {e}")
-            
+
     return {"status": "ok"}

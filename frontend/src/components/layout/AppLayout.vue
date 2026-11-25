@@ -6,7 +6,6 @@ import { authFetch, clearToken, getToken } from '@/assets/js/api'
 import { useBodyScrollLock } from '@/assets/js/useBodyScrollLock'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import BaseButton from '@/components/ui/buttons/BaseButton.vue'
-import BaseModal from '@/components/ui/modals/BaseModal.vue'
 import IconButton from '@/components/ui/buttons/IconButton.vue'
 import Icon from '@/components/ui/icons/Icon.vue'
 
@@ -23,20 +22,9 @@ const user = ref(null)
 const isLoading = ref(true)
 const errorMessage = ref('')
 const drawerOpen = ref(false)
-const logoutConfirmOpen = ref(false)
-
-const askLogout = () => {
-  drawerOpen.value = false
-  logoutConfirmOpen.value = true
-}
-
-const confirmLogout = () => {
-  logoutConfirmOpen.value = false
-  clearToken()
-  router.replace('/login')
-}
 
 const logout = () => {
+  drawerOpen.value = false
   clearToken()
   router.replace('/login')
 }
@@ -87,7 +75,7 @@ onMounted(loadUser)
   <div class="min-h-screen bg-back-prime text-white lg:pl-[260px]">
     <!-- Desktop sidebar -->
     <aside class="fixed inset-y-0 left-0 z-30 hidden w-[260px] border-r border-back-secondary bg-back-prime lg:block">
-      <AppSidebar :user="user" @logout="askLogout" />
+      <AppSidebar :user="user" @logout="logout" />
     </aside>
 
     <!-- Mobile navbar -->
@@ -108,7 +96,7 @@ onMounted(loadUser)
         <aside
           class="absolute inset-y-0 left-0 w-[280px] max-w-[85vw] animate-fade-in border-r border-back-secondary bg-back-prime shadow-[20px_0_60px_rgba(0,0,0,0.5)]"
         >
-          <AppSidebar :user="user" @navigate="drawerOpen = false" @logout="askLogout" />
+          <AppSidebar :user="user" @navigate="drawerOpen = false" @logout="logout" />
         </aside>
       </div>
     </Teleport>
@@ -142,16 +130,5 @@ onMounted(loadUser)
         Loading your account...
       </p>
     </main>
-
-    <!-- UC-03 / SC-03: Logout confirmation dialog (Batal / Lanjut) -->
-    <BaseModal v-model="logoutConfirmOpen" title="Log out of False Speech?">
-      <p class="text-sm text-secondary/80">
-        Your local session token will be cleared and you will need to log in again to resume monitoring.
-      </p>
-      <div class="mt-6 flex justify-end gap-3">
-        <BaseButton variant="outlineLight" @click="logoutConfirmOpen = false">Cancel</BaseButton>
-        <BaseButton @click="confirmLogout">Log out</BaseButton>
-      </div>
-    </BaseModal>
   </div>
 </template>

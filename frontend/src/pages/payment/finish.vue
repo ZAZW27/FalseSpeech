@@ -42,6 +42,18 @@ const statusMeta = computed(() => {
 const refreshAccount = async () => {
   isRefreshing.value = true
   try {
+    // Sync any pending Midtrans orders immediately (covers localhost without webhook tunnel)
+    const syncRes = await authFetch('/api/payment/sync', { method: 'POST' })
+    if (syncRes.status === 401) {
+      clearToken()
+      router.replace('/login')
+      return
+    }
+    if (syncRes.ok) {
+      const synced = await syncRes.json()
+      userTier.value = synced?.user?.tier ?? ''
+      return
+    }
     const res = await authFetch('/api/users/me')
     if (res.status === 401) {
       clearToken()

@@ -5,8 +5,8 @@ import {authFetch, clearToken} from "@/assets/js/api";
 import {getInitials} from "@/assets/js/format";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import BaseButton from "@/components/ui/buttons/BaseButton.vue";
-import BaseModal from "@/components/ui/modals/BaseModal.vue";
 import FormField from "@/components/ui/inputs/FormField.vue";
+import Icon from "@/components/ui/icons/Icon.vue";
 
 const TIER_LABELS = {
     free: "Free",
@@ -200,7 +200,7 @@ const saveChanges = async () => {
 const logoutConfirmOpen = ref(false);
 
 const askLogout = () => {
-    logoutConfirmOpen.value = true;
+    logoutConfirmOpen.value = !logoutConfirmOpen.value;
 };
 
 const logout = async () => {
@@ -287,14 +287,49 @@ onMounted(loadUser);
                     </dd>
                 </dl>
 
-                <BaseButton
-                    class="mt-6 w-full"
-                    variant="outlineLight"
-                    :disabled="isLoggingOut"
-                    @click="askLogout"
-                >
-                    {{ isLoggingOut ? "Logging out..." : "Log out" }}
-                </BaseButton>
+                <div class="relative mt-6 w-full">
+                    <BaseButton
+                        class="w-full inline-flex items-center justify-center gap-2"
+                        variant="outlineLight"
+                        :disabled="isLoggingOut"
+                        :aria-expanded="logoutConfirmOpen"
+                        @click="askLogout"
+                    >
+                        <Icon name="logout" :size="15" />
+                        {{ isLoggingOut ? "Logging out..." : "Log out" }}
+                    </BaseButton>
+
+                    <!-- Solid inline confirmation dropdown -->
+                    <div
+                        v-if="logoutConfirmOpen"
+                        role="menu"
+                        class="mt-2 w-full rounded-xl border border-white/15 bg-[#0f172a] p-3 text-left shadow-xl"
+                    >
+                        <p class="text-xs font-semibold text-white">
+                            Log out of False Speech?
+                        </p>
+                        <p class="mt-0.5 text-[11px] text-slate-400">
+                            You will need to sign in again to continue.
+                        </p>
+                        <div class="mt-2.5 flex justify-end gap-2">
+                            <button
+                                type="button"
+                                class="rounded-lg border border-white/15 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-slate-700"
+                                @click="logoutConfirmOpen = false"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-500 disabled:opacity-50"
+                                :disabled="isLoggingOut"
+                                @click="logout"
+                            >
+                                {{ isLoggingOut ? "Logging out..." : "Log out" }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </section>
 
             <!-- Right column: editable form -->
@@ -435,27 +470,5 @@ onMounted(loadUser);
                 </div>
             </section>
         </div>
-
-        <BaseModal
-            v-model="logoutConfirmOpen"
-            title="Log out of False Speech?"
-            maxWidth="max-w-md"
-        >
-            <p class="text-sm text-white/75">
-                Are you sure you want to log out? You will need to sign in again
-                to access your dashboard, live audio detection, and history.
-            </p>
-            <div class="mt-6 flex justify-end gap-3">
-                <BaseButton
-                    variant="outlineLight"
-                    @click="logoutConfirmOpen = false"
-                >
-                    Cancel
-                </BaseButton>
-                <BaseButton :disabled="isLoggingOut" @click="logout">
-                    {{ isLoggingOut ? "Logging out..." : "Log out" }}
-                </BaseButton>
-            </div>
-        </BaseModal>
     </AppLayout>
 </template>

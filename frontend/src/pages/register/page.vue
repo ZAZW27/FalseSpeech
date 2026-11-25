@@ -1,5 +1,5 @@
 <script setup>
-import {onBeforeUnmount, ref} from "vue";
+import {computed, onBeforeUnmount, ref} from "vue";
 import {RouterLink, useRouter} from "vue-router";
 import AuthLayout from "@/components/layout/AuthLayout.vue";
 import BrandPanel from "@/pages/login/BrandPanel.vue";
@@ -23,11 +23,48 @@ const otpCode = ref("");
 const isOtpSent = ref(false);
 
 const isLoading = ref(false);
+const isResending = ref(false);
+const resendCooldown = ref(0);
+const otpExpiresIn = ref(0);
 const errorMessage = ref("");
 const successMessage = ref("");
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 let redirectTimer = null;
+let cooldownTimer = null;
+let expiryTimer = null;
+
+const formattedOtpExpiry = computed(() => {
+    const mins = Math.floor(otpExpiresIn.value / 60);
+    const secs = otpExpiresIn.value % 60;
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+});
+
+const startOtpExpiryTimer = (seconds = 300) => {
+    clearInterval(expiryTimer);
+    otpExpiresIn.value = seconds;
+    expiryTimer = setInterval(() => {
+        if (otpExpiresIn.value <= 1) {
+            clearInterval(expiryTimer);
+            otpExpiresIn.value = 0;
+        } else {
+            otpExpiresIn.value -= 1;
+        }
+    }, 1000);
+};
+
+const startResendCooldown = (seconds = 60) => {
+    clearInterval(cooldownTimer);
+    resendCooldown.value = seconds;
+    cooldownTimer = setInterval(() => {
+        if (resendCooldown.value <= 1) {
+            clearInterval(cooldownTimer);
+            resendCooldown.value = 0;
+        } else {
+            resendCooldown.value -= 1;
+        }
+    }, 1000);
+};
 
 const handleOtpInput = e => {
     const cleanValue = e.target.value.replace(/[^0-9]/g, "");
@@ -84,12 +121,52 @@ const submitRegistration = async () => {
         }
 
         isOtpSent.value = true;
+        startResendCooldown(60);
+        startOtpExpiryTimer(300);
         successMessage.value =
             "Kode OTP telah dikirim ke email Anda. Cek inbox/spam.";
     } catch (err) {
         errorMessage.value = "Tidak dapat terhubung ke server.";
     } finally {
         isLoading.value = false;
+    }
+};
+
+const resendOtp = async () => {
+    if (isResending.value || resendCooldown.value > 0) return;
+    errorMessage.value = "";
+    successMessage.value = "";
+    isResending.value = true;
+
+    try {
+        const response = await fetch(SEND_OTP_URL, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                name: name.value.trim(),
+                email: email.value.trim(),
+                phone: phone.value.trim(),
+                password: password.value,
+            }),
+        });
+
+        const data = await response.json().catch(() => null);
+
+        if (!response.ok) {
+            errorMessage.value = readError(data, response.status);
+            return;
+        }
+
+        otpCode.value = "";
+        startResendCooldown(60);
+        startOtpExpiryTimer(300);
+        successMessage.value =
+            data?.message ||
+            "Kode OTP baru telah dikirim ulang ke email Anda. Cek inbox/spam.";
+    } catch (err) {
+        errorMessage.value = "Tidak dapat terhubung ke server.";
+    } finally {
+        isResending.value = false;
     }
 };
 
@@ -134,7 +211,11 @@ const submitOtp = async () => {
     }
 };
 
-onBeforeUnmount(() => clearTimeout(redirectTimer));
+onBeforeUnmount(() => {
+    clearTimeout(redirectTimer);
+    clearInterval(cooldownTimer);
+    clearInterval(expiryTimer);
+});
 </script>
 
 <template>
@@ -238,11 +319,29 @@ onBeforeUnmount(() => clearTimeout(redirectTimer));
                 @submit.prevent="submitOtp"
             >
                 <div class="flex flex-col gap-2">
-                    <label
-                        for="register-otp"
-                        class="text-sm font-semibold text-back-prime"
-                        >6-Digit OTP Code</label
-                    >
+                    <div class="flex items-center justify-between gap-2">
+                        <label
+                            for="register-otp"
+                            class="text-sm font-semibold text-back-prime"
+                            >6-Digit OTP Code</label
+                        >
+                        <span
+                            :class="[
+                                'rounded-full px-2.5 py-0.5 font-mono text-xs font-semibold',
+                                otpExpiresIn === 0
+                                    ? 'bg-red-100 text-red-600'
+                                    : otpExpiresIn <= 60
+                                      ? 'bg-amber-100 text-amber-700'
+                                      : 'bg-slate-100 text-slate-600',
+                            ]"
+                        >
+                            {{
+                                otpExpiresIn > 0
+                                    ? `Expires in ${formattedOtpExpiry}`
+                                    : "OTP expired"
+                            }}
+                        </span>
+                    </div>
                     <input
                         id="register-otp"
                         :value="otpCode"
@@ -253,6 +352,12 @@ onBeforeUnmount(() => clearTimeout(redirectTimer));
                         maxlength="6"
                         class="rounded-xl border border-back-prime/20 bg-white px-4 py-3 text-base text-back-prime focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/20"
                     />
+                    <p
+                        v-if="otpExpiresIn === 0"
+                        class="text-xs font-medium text-red-500"
+                    >
+                        This code has expired. Click <strong>Resend OTP</strong> below to request a new code.
+                    </p>
                 </div>
 
                 <p
@@ -270,30 +375,48 @@ onBeforeUnmount(() => clearTimeout(redirectTimer));
                     {{ successMessage }}
                 </p>
 
-                <!-- BUTTON LOGIC FIXED: DISABLED KALAU OTP KURANG DARI 6 DIGIT -->
+                <!-- BUTTON LOGIC FIXED: DISABLED KALAU OTP KURANG DARI 6 DIGIT ATAU EXPIRED -->
                 <BaseButton
                     type="submit"
                     variant="dark"
                     size="lg"
                     block
                     class="!h-[54px]"
-                    :disabled="isLoading || otpCode.length !== 6"
+                    :disabled="isLoading || otpCode.length !== 6 || otpExpiresIn === 0"
                 >
                     {{ isLoading ? "Verifying..." : "Verify OTP" }}
                 </BaseButton>
 
-                <button
-                    type="button"
-                    class="text-sm text-center text-gray-500 hover:text-gray-800 mt-2"
-                    @click="
-                        isOtpSent = false;
-                        errorMessage = '';
-                        successMessage = '';
-                        otpCode = '';
-                    "
-                >
-                    Wrong email? Go back.
-                </button>
+                <div class="mt-1 flex items-center justify-between gap-3 text-sm">
+                    <button
+                        type="button"
+                        class="font-semibold text-blue-600 transition hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline"
+                        :disabled="isResending || resendCooldown > 0"
+                        @click="resendOtp"
+                    >
+                        {{
+                            isResending
+                                ? "Sending new OTP..."
+                                : resendCooldown > 0
+                                  ? `Resend OTP (${resendCooldown}s)`
+                                  : "Resend OTP"
+                        }}
+                    </button>
+
+                    <button
+                        type="button"
+                        class="text-gray-500 transition hover:text-gray-800"
+                        @click="
+                            isOtpSent = false;
+                            errorMessage = '';
+                            successMessage = '';
+                            otpCode = '';
+                            resendCooldown = 0;
+                        "
+                    >
+                        Wrong email? Go back.
+                    </button>
+                </div>
             </form>
 
             <p

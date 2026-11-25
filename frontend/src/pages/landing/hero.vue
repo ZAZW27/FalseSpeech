@@ -10,7 +10,8 @@ import WaveformBars from "@/components/ui/charts/WaveformBars.vue";
 const router = useRouter();
 
 // The dashboard guards itself: without a token AppLayout redirects to /login.
-const goToDashboard = () => router.push("/dashboard");
+// When logged in, autostart=1 tells the dashboard to start the listening session immediately.
+const goToDashboard = () => router.push({path: "/dashboard", query: {autostart: "1"}});
 
 // Desktop placement for each result card (data-driven, index matches heroResults).
 const cardPositions = [

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { authFetch } from '@/assets/js/api'
 import { summarizeHistory } from '@/assets/js/historyStats'
 import { useAudioCapture } from '@/assets/js/useAudioCapture'
@@ -19,6 +19,7 @@ const props = defineProps({
   updateQuota: { type: Function, required: true },
 })
 
+const route = useRoute()
 const router = useRouter()
 
 const {
@@ -65,7 +66,13 @@ watch(isListening, (now, before) => {
   if (before && !now) loadSavedHistory()
 })
 
-onMounted(loadSavedHistory)
+onMounted(() => {
+  loadSavedHistory()
+  if (route.query.autostart === '1') {
+    router.replace({ path: '/dashboard', query: {} })
+    startCapture()
+  }
+})
 </script>
 
 <template>
