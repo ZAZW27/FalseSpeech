@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { authFetch } from '@/assets/js/api'
 import { summarizeHistory } from '@/assets/js/historyStats'
 import { useAudioCapture } from '@/assets/js/useAudioCapture'
@@ -19,6 +19,7 @@ const props = defineProps({
   updateQuota: { type: Function, required: true },
 })
 
+const route = useRoute()
 const router = useRouter()
 
 const {
@@ -34,6 +35,7 @@ const {
   statusText,
   statusWarn,
   errorMessage,
+  fairUsageExceeded,
   startCapture,
   stopCapture,
 } = useAudioCapture({
@@ -64,13 +66,33 @@ watch(isListening, (now, before) => {
   if (before && !now) loadSavedHistory()
 })
 
-onMounted(loadSavedHistory)
+onMounted(() => {
+  loadSavedHistory()
+  if (route.query.autostart === '1') {
+    router.replace({ path: '/dashboard', query: {} })
+    startCapture()
+  }
+})
 </script>
 
 <template>
   <div class="flex flex-col gap-5">
+    <!-- UC-12: Dedicated red Fair Usage Policy (FUP) alert banner for Lifetime users -->
+    <div
+      v-if="fairUsageExceeded"
+      class="flex flex-col gap-1 rounded-2xl border border-red-500/60 bg-red-500/15 px-5 py-4 text-red-200 shadow-lg"
+      role="alert"
+    >
+      <p class="text-sm font-bold uppercase tracking-wider text-red-400">
+        Fair Usage Policy (12-Hour Daily Limit Reached)
+      </p>
+      <p class="text-sm text-red-200/90">
+        {{ errorMessage || 'Lifetime accounts are limited to 12 hours (43,200 seconds) of continuous listening per day. Your quota will automatically reset at midnight UTC.' }}
+      </p>
+    </div>
+
     <p
-      v-if="errorMessage"
+      v-else-if="errorMessage"
       class="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-400"
       role="alert"
     >

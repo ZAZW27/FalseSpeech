@@ -7,7 +7,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.config import id_model, device
-from app.service import inference
+from app.service import inference, scheduler
 from app.api.routes import router as http_router
 from app.api.websocket import router as ws_router
 from app.db.init_db import init_db
@@ -20,7 +20,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI): 
     init_db()
     inference.loading_model(id_model, device)
+    inference.start_priority_worker()
+    scheduler.start_subscription_scheduler()
     yield
+    await inference.stop_priority_worker()
+    await scheduler.stop_subscription_scheduler()
     logger.info("shutting down.")
     
 app = FastAPI(title="False Speech", lifespan=lifespan)

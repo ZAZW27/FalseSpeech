@@ -1,5 +1,6 @@
 <script setup>
-import { useRouter } from 'vue-router'
+import { onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAudioCapture } from '@/assets/js/useAudioCapture'
 import PlayButton from '@/components/ui/buttons/PlayButton.vue'
 import CaptureControls from '@/components/dashboard/CaptureControls.vue'
@@ -11,6 +12,7 @@ const props = defineProps({
   updateQuota: { type: Function, required: true },
 })
 
+const route = useRoute()
 const router = useRouter()
 
 const {
@@ -31,6 +33,13 @@ const {
 })
 
 const toggle = () => (isListening.value ? stopCapture() : startCapture())
+
+onMounted(() => {
+  if (route.query.autostart === '1') {
+    router.replace({ path: '/dashboard', query: {} })
+    startCapture()
+  }
+})
 </script>
 
 <template>

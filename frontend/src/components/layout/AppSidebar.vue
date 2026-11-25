@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { brand } from '@/assets/data/site'
 import { appLinks } from '@/assets/data/appNavigation'
@@ -14,7 +14,18 @@ const props = defineProps({
 })
 
 // "navigate" lets the mobile drawer close itself after a link is clicked.
-defineEmits(['navigate', 'logout'])
+const emit = defineEmits(['navigate', 'logout'])
+
+const logoutMenuOpen = ref(false)
+
+const toggleLogoutMenu = () => {
+  logoutMenuOpen.value = !logoutMenuOpen.value
+}
+
+const confirmLogout = () => {
+  logoutMenuOpen.value = false
+  emit('logout')
+}
 
 const planLabel = computed(() => `${capitalize(props.user?.tier ?? '')} plan`)
 const usedLabel = computed(() => formatDuration(props.user?.quota_used))
@@ -43,8 +54,8 @@ const percent = computed(() => toPercent(props.user?.quota_used, props.user?.quo
       </RouterLink>
     </nav>
 
-    <div v-if="user" class="mt-auto flex flex-col gap-6 pt-8">
-      <div class="rounded-2xl border border-back-secondary bg-back-secondary/40 p-5">
+    <div class="mt-auto flex flex-col gap-6 pt-8">
+      <div v-if="user" class="rounded-2xl border border-back-secondary bg-back-secondary/40 p-5">
         <div class="flex items-center justify-between">
           <span class="text-sm font-semibold text-white">{{ planLabel }}</span>
           <PlanTag label="ACTIVE" />
@@ -56,24 +67,71 @@ const percent = computed(() => toPercent(props.user?.quota_used, props.user?.quo
         <ConfidenceBar :value="percent" tone="lime" class="mt-3" />
       </div>
 
-      <div class="flex items-center gap-3 px-1">
-        <span
-          class="flex size-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-back-secondary to-brand-green text-sm font-bold text-white"
-          aria-hidden="true"
+      <div class="relative">
+        <!-- Solid inline dropdown popover (replaces full-screen modal) -->
+        <div
+          v-if="logoutMenuOpen"
+          role="menu"
+          class="absolute bottom-full left-0 right-0 z-40 mb-2 rounded-xl border border-white/15 bg-[#0f172a] p-3 shadow-2xl"
         >
-          {{ getInitials(user.name) }}
-        </span>
-        <div class="min-w-0">
-          <p class="truncate text-sm font-semibold text-white">{{ user.name }}</p>
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 text-xs text-secondary/70 transition hover:text-secondary"
-            @click="$emit('logout')"
-          >
-            <Icon name="logout" :size="12" />
-            Log out
-          </button>
+          <p class="text-xs font-semibold text-white">Log out of False Speech?</p>
+          <p class="mt-0.5 text-[11px] text-slate-400">Your local session will be cleared.</p>
+          <div class="mt-2.5 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              class="rounded-lg border border-white/15 bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-slate-700"
+              @click="logoutMenuOpen = false"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-red-500"
+              @click="confirmLogout"
+            >
+              Log out
+            </button>
+          </div>
         </div>
+
+        <div v-if="user" class="flex items-center gap-3 px-1">
+          <RouterLink
+            to="/profile"
+            class="flex size-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-back-secondary to-brand-green text-sm font-bold text-white"
+            @click="$emit('navigate')"
+          >
+            {{ getInitials(user.name) }}
+          </RouterLink>
+          <div class="min-w-0">
+            <RouterLink
+              to="/profile"
+              class="block truncate text-sm font-semibold text-white hover:text-brand-green"
+              @click="$emit('navigate')"
+            >
+              {{ user.name }}
+            </RouterLink>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 text-xs text-secondary/70 transition hover:text-secondary"
+              :aria-expanded="logoutMenuOpen"
+              @click="toggleLogoutMenu"
+            >
+              <Icon name="logout" :size="12" />
+              Log out
+            </button>
+          </div>
+        </div>
+
+        <button
+          v-else
+          type="button"
+          class="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-medium text-secondary/80 transition hover:bg-white/10 hover:text-white"
+          :aria-expanded="logoutMenuOpen"
+          @click="toggleLogoutMenu"
+        >
+          <Icon name="logout" :size="14" />
+          Log out
+        </button>
       </div>
     </div>
   </div>

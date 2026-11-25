@@ -28,6 +28,7 @@ class User(Base):
     quota_used = Column(Integer, nullable=False, default=0)
     quota_limit = Column(Integer, nullable=False, default=600)
     quota_reset_at = Column(DateTime(timezone=True), nullable=True)
+    subscription_expires_at = Column(DateTime(timezone=True), nullable=True)
     
     otp_code = Column(String(6), nullable=True)
     otp_expires_at = Column(DateTime(timezone=True), nullable=True)

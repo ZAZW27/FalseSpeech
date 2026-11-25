@@ -80,8 +80,8 @@ const s = computed(() => sizes[props.size]);
             ]"
         >
             <Icon
-                :class="['translate-x-0.75']"
-                :name="playing ? 'stop' : 'play'"
+                :class="[playing ? '' : 'translate-x-0.75']"
+                :name="playing ? 'pause' : 'play'"
                 :size="s.icon"
             />
         </span>

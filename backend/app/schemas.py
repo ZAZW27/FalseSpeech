@@ -48,6 +48,7 @@ class UserPub(BaseModel):
     quota_used: int
     quota_limit: int
     quota_reset_at: Optional[datetime] = None
+    subscription_expires_at: Optional[datetime] = None
 
 class LoginRes(BaseModel):
     access_token: str
@@ -58,6 +59,14 @@ class LoginRes(BaseModel):
 class UpdateProfileRequest(BaseModel):
     name: Optional[str] = None
     phone: Optional[str] = None
+
+class ChangePasswordReq(BaseModel):
+    current_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8)
+
+class ChangePasswordRes(BaseModel):
+    success: bool
+    message: str
 
 # Subscribes
 class Tier(BaseModel): 
@@ -79,10 +88,15 @@ class DowngradeReq(BaseModel): # Downgrade
 class DowngradeRes(BaseModel): 
     success: bool
     effective_at: datetime
+    previous_tier: str
+    new_tier: str
+    new_quota_limit: int
+    adjustment_cost_idr: int = 0
 
 # Billings
 class Invoice(BaseModel): 
     invoice_id: str
+    order_id: str  # dipakai frontend untuk GET /api/billing/invoice/{order_id}
     amount_idr: int
     status: str
     issued_at: datetime
@@ -118,3 +132,12 @@ class WSError(BaseModel):
 class OTPVerifyReq(BaseModel):
     email: EmailStr
     otp_code: str
+
+# Forgot & reset password
+class ForgotPasswordReq(BaseModel):
+    email: EmailStr
+
+class ResetPasswordReq(BaseModel):
+    email: EmailStr
+    otp_code: str = Field(..., min_length=6, max_length=6)
+    new_password: str = Field(..., min_length=8)

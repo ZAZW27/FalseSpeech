@@ -4,6 +4,9 @@ import dashUrl from "./dash.svg";
 import historyUrl from "./history.svg";
 import planUrl from "./plan.svg";
 import playUrl from "./play.svg";
+import pauseUrl from "./pause.svg";
+import logoutUrl from "./logout.svg";
+import personUrl from "./person.svg";
 import logoUrl from "./icon.svg";
 
 // Needs the Font Awesome 6 stylesheet once in index.html:
@@ -20,6 +23,11 @@ const svgIcons = {
     card: planUrl,
     plan: planUrl,
     play: playUrl,
+    pause: pauseUrl,
+    stop: pauseUrl,
+    logout: logoutUrl,
+    profile: personUrl,
+    user: personUrl,
     logo: logoUrl,
     waveform: logoUrl, // old name, kept so older usages still show the app icon
 };
@@ -29,15 +37,11 @@ const faIcons = {
     shield: "fa-shield-halved",
     menu: "fa-bars",
     check: "fa-check",
-    user: "fa-user",
-    profile: "fa-user",
     trend: "fa-arrow-trend-up",
     search: "fa-magnifying-glass",
     close: "fa-xmark",
     "chevron-right": "fa-chevron-right",
     alert: "fa-triangle-exclamation",
-    stop: "fa-stop",
-    logout: "fa-right-from-bracket",
 };
 
 const svgUrl = computed(() => svgIcons[props.name]);

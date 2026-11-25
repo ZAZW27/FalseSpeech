@@ -131,7 +131,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 logger.info(f"user {user.id} hit quota, closing session {session_id}")
                 break
 
-            ril_prob, fek_prob = await asyncio.to_thread(inference.inferencing, wav_tensor)
+            ril_prob, fek_prob = await inference.enqueue_inference(wav_tensor, user.tier)
             is_fake = fek_prob > 0.5
 
             total_fek_prob += float(fek_prob)

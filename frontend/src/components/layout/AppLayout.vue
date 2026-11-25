@@ -24,6 +24,7 @@ const errorMessage = ref('')
 const drawerOpen = ref(false)
 
 const logout = () => {
+  drawerOpen.value = false
   clearToken()
   router.replace('/login')
 }

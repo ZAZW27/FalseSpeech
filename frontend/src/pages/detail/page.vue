@@ -1,17 +1,20 @@
 <script setup>
-import {computed, ref} from "vue";
-import {useRoute} from "vue-router";
+import {computed} from "vue";
+import {useRoute, useRouter} from "vue-router";
 import {getPlanById} from "@/assets/data/plans";
+import {getToken} from "@/assets/js/api";
 import BaseButton from "@/components/ui/buttons/BaseButton.vue";
 import PlanTag from "@/components/ui/badges/PlanTag.vue";
-import PlanModal from "@/components/ui/modals/PlanModal.vue";
 import Icon from "@/components/ui/icons/Icon.vue";
 
 const route = useRoute();
+const router = useRouter();
 // Re-evaluates when the :id param changes.
 const plan = computed(() => getPlanById(route.params.id));
 
-const modalOpen = ref(false);
+const handleSelectPlan = () => {
+    router.push(getToken() ? "/plan" : "/login");
+};
 </script>
 
 <template>
@@ -74,18 +77,15 @@ const modalOpen = ref(false);
                         </li>
                     </ul>
 
-                    <!-- Interactive feature #2: opens the confirmation modal -->
                     <BaseButton
                         size="lg"
                         block
                         class="mt-8"
-                        @click="modalOpen = true"
+                        @click="handleSelectPlan"
                     >
                         {{ plan.cta.label }}
                     </BaseButton>
                 </div>
-
-                <PlanModal v-model="modalOpen" :plan="plan" />
             </div>
 
             <div v-else class="max-w-[480px]" role="alert">

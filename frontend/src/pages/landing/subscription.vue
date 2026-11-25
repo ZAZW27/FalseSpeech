@@ -1,7 +1,16 @@
 <script setup>
+import {useRouter} from "vue-router";
 import {pricingHeader, plans} from "@/assets/data/plans";
+import {getToken} from "@/assets/js/api";
 import SectionHeader from "@/components/ui/sections/SectionHeader.vue";
 import PricingCard from "@/components/ui/cards/PricingCard.vue";
+import BaseButton from "@/components/ui/buttons/BaseButton.vue";
+
+const router = useRouter();
+
+const handlePlanClick = () => {
+    router.push(getToken() ? "/plan" : "/login");
+};
 </script>
 
 <template>
@@ -25,7 +34,19 @@ import PricingCard from "@/components/ui/cards/PricingCard.vue";
                     v-for="plan in plans"
                     :key="plan.id"
                     :plan="plan"
-                />
+                >
+                    <template #cta>
+                        <BaseButton
+                            :variant="plan.cta.variant"
+                            size="lg"
+                            block
+                            class="mt-10"
+                            @click="handlePlanClick"
+                        >
+                            {{ plan.cta.label }}
+                        </BaseButton>
+                    </template>
+                </PricingCard>
             </div>
         </div>
     </section>

@@ -8,6 +8,7 @@ const DashboardPage = () => import('@/pages/dashboard/page.vue')
 const HistoryPage = () => import('@/pages/history/page.vue')
 const PlanPage = () => import('@/pages/plan/page.vue')
 const ProfilePage = () => import('@/pages/profile/page.vue')
+const PaymentFinishPage = () => import('@/pages/payment/finish.vue')
 
 const routes = [
   {
@@ -35,6 +36,7 @@ const routes = [
   { path: '/history', name: 'history', component: HistoryPage, meta: { title: 'History' } },
   { path: '/plan', name: 'plan', component: PlanPage, meta: { title: 'Plan' } },
   { path: '/profile', name: 'profile', component: ProfilePage, meta: { title: 'Profile' } },
+  { path: '/payment/finish', name: 'payment-finish', component: PaymentFinishPage, meta: { title: 'Payment Status' } },
 ]
 
 const router = createRouter({
