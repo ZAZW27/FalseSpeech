@@ -8,15 +8,19 @@ import BaseButton from "@/components/ui/buttons/BaseButton.vue";
 
 const router = useRouter();
 
-const handlePlanClick = () => {
-    router.push(getToken() ? "/plan" : "/login");
+const handlePlanClick = (plan) => {
+    if (!getToken()) {
+        router.push("/login");
+        return;
+    }
+    router.push({name: "detail", params: {id: plan.id}});
 };
 </script>
 
 <template>
     <section
         id="subscription"
-        class="snap-start min-h-svh bg-surface-light py-16 md:py-24 lg:py-[130px]"
+        class="snap-start flex min-h-[100svh] flex-col justify-center bg-surface-light py-16 md:py-20 lg:py-24"
     >
         <div class="mx-auto w-full max-w-[1440px] px-6 lg:px-12 xl:px-20">
             <SectionHeader
@@ -41,7 +45,7 @@ const handlePlanClick = () => {
                             size="lg"
                             block
                             class="mt-10"
-                            @click="handlePlanClick"
+                            @click="handlePlanClick(plan)"
                         >
                             {{ plan.cta.label }}
                         </BaseButton>

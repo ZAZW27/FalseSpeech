@@ -20,6 +20,30 @@ def init_db() -> None:
                     "subscription_expires_at TIMESTAMPTZ"
                 )
             )
+            conn.execute(
+                text(
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+                    "balance INTEGER NOT NULL DEFAULT 0"
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+                    "cycle_quota_used INTEGER NOT NULL DEFAULT 0"
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS "
+                    "balance_applied INTEGER NOT NULL DEFAULT 0"
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS "
+                    "payment_url TEXT"
+                )
+            )
     except Exception as e:
         logger.warning(f"Incremental column migration skipped: {e}")
     logger.info("Database tables ensured")

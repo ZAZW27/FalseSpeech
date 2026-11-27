@@ -4,6 +4,11 @@
 services:
   antideepfake-server:
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 6G
     command: >
       uvicorn app.main:app
       --host 0.0.0.0

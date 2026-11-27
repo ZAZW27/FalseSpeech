@@ -46,7 +46,7 @@ export const plans = [
   {
     id: 'pro-max',
     name: 'Pro Max',
-    price: 'Rp199.000',
+    price: 'Rp99.000',
     period: 'per month',
     featured: true,
     tag: 'Most popular',
@@ -73,7 +73,7 @@ export const plans = [
       'Lifetime removes the daily limit under a fair-usage policy and includes everything in Pro Max. You pay one time and keep access for good.',
     features: [
       'No daily limit (fair usage)',
-      'Everything in Pro Max',
+      'Android app & home widget',
       'Highest-priority processing',
       'Pay once, use for good',
     ],

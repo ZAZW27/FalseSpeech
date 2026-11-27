@@ -42,6 +42,8 @@ const faIcons = {
     close: "fa-xmark",
     "chevron-right": "fa-chevron-right",
     alert: "fa-triangle-exclamation",
+    mobile: "fa-mobile-screen-button",
+    download: "fa-download",
 };
 
 const svgUrl = computed(() => svgIcons[props.name]);

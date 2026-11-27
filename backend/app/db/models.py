@@ -25,7 +25,9 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
 
     tier = Column(String(20), nullable=False, default="free")
+    balance = Column(Integer, nullable=False, default=0, server_default="0")
     quota_used = Column(Integer, nullable=False, default=0)
+    cycle_quota_used = Column(Integer, nullable=False, default=0, server_default="0")
     quota_limit = Column(Integer, nullable=False, default=600)
     quota_reset_at = Column(DateTime(timezone=True), nullable=True)
     subscription_expires_at = Column(DateTime(timezone=True), nullable=True)
@@ -80,6 +82,8 @@ class TransactionRow(Base):
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     order_id = Column(String(100), unique=True, index=True, nullable=False)
     amount = Column(Integer, nullable=False)
+    balance_applied = Column(Integer, nullable=False, default=0, server_default="0")
     status = Column(String(20), default="pending", nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     invoice_html = Column(Text, nullable=True)
+    payment_url = Column(Text, nullable=True)

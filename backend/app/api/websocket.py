@@ -196,6 +196,7 @@ async def websocket_endpoint(websocket: WebSocket):
             session.verdict = verdict
 
             user.quota_used = user.quota_used + int(total_audio_seconds)
+            user.cycle_quota_used = int(user.cycle_quota_used or 0) + int(total_audio_seconds)
 
             db.commit()
             logger.info(
