@@ -27,7 +27,7 @@ const toneClass = {
 </script>
 
 <template>
-  <section class="flex flex-col overflow-hidden rounded-3xl border border-back-secondary bg-black">
+  <section class="flex flex-col overflow-hidden rounded-3xl border-2 border-back-secondary bg-black">
     <header class="flex items-center justify-between border-b border-back-secondary px-5 py-3">
       <h2 class="font-mono text-xs uppercase tracking-[0.2em] text-secondary/70">Live log</h2>
       <span class="flex items-center gap-2 font-mono text-xs text-secondary/70">

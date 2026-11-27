@@ -1,19 +1,21 @@
 <script setup>
-import {computed} from "vue";
-import {RouterLink, useRoute, useRouter} from "vue-router";
-import {brand} from "@/assets/data/site";
-import {navLinks} from "@/assets/data/navigation";
-import {clearToken, getToken} from "@/assets/js/api";
-import {useScrollPosition} from "@/assets/js/useScrollPosition";
+import { computed, ref, watch } from "vue";
+import { RouterLink, useRoute, useRouter } from "vue-router";
+import { brand } from "@/assets/data/site";
+import { navLinks } from "@/assets/data/navigation";
+import { clearToken, getToken } from "@/assets/js/api";
+import { useScrollPosition } from "@/assets/js/useScrollPosition";
 import BaseButton from "@/components/ui/buttons/BaseButton.vue";
 import IconButton from "@/components/ui/buttons/IconButton.vue";
 import Icon from "@/components/ui/icons/Icon.vue";
+import LogoutConfirmPopover from "@/components/ui/modals/LogoutConfirmPopover.vue";
 
 const emit = defineEmits(["open-menu"]);
 
 const route = useRoute();
 const router = useRouter();
-const {isScrolled} = useScrollPosition();
+const { isScrolled } = useScrollPosition();
+const logoutConfirmOpen = ref(false);
 
 // The detail page has no hero under the header, so it needs a solid header.
 const solid = computed(() => isScrolled.value || route.name === "detail");
@@ -24,10 +26,18 @@ const isLoggedIn = computed(() => {
     return Boolean(getToken());
 });
 
-const logout = () => {
+const confirmLogout = () => {
+    logoutConfirmOpen.value = false;
     clearToken();
     router.replace("/login");
 };
+
+watch(
+    () => route.fullPath,
+    () => {
+        logoutConfirmOpen.value = false;
+    },
+);
 </script>
 
 <template>
@@ -57,7 +67,6 @@ const logout = () => {
                         <RouterLink
                             :to="link.to"
                             class="text-sm font-medium text-white/90 transition hover:text-brand-green"
-                            active-class="!text-brand-green"
                             exact-active-class="!text-brand-green"
                         >
                             {{ link.label }}
@@ -67,18 +76,29 @@ const logout = () => {
             </div>
 
             <!-- Logged in: go to the app. Logged out: login and register. -->
-            <div v-if="isLoggedIn" class="hidden items-center gap-5 lg:flex">
-                <BaseButton to="/dashboard" size="sm"
-                    ><Icon name="dashboard" :size="16" />Dashboard</BaseButton
-                >
-                <BaseButton size="sm" variant="outlineLight" @click="logout"
-                    ><Icon name="logout" :size="14" />Log out</BaseButton
-                >
+            <div v-if="isLoggedIn" class="relative hidden items-center gap-5 lg:flex">
+                <BaseButton to="/dashboard" size="sm">
+                    <Icon name="dashboard" :size="16" />Dashboard
+                </BaseButton>
+                <div class="relative">
+                    <BaseButton
+                        size="sm"
+                        variant="outlineLight"
+                        :aria-expanded="logoutConfirmOpen"
+                        @click="logoutConfirmOpen = !logoutConfirmOpen"
+                    >
+                        <Icon name="logout" :size="14" />Log out
+                    </BaseButton>
+                    <LogoutConfirmPopover
+                        :open="logoutConfirmOpen"
+                        position-class="top-full right-0 mt-2 w-64"
+                        @cancel="logoutConfirmOpen = false"
+                        @confirm="confirmLogout"
+                    />
+                </div>
             </div>
             <div v-else class="hidden items-center gap-5 lg:flex">
-                <BaseButton to="/login" size="sm" variant="outlineLight"
-                    >Login</BaseButton
-                >
+                <BaseButton to="/login" size="sm" variant="outlineLight">Login</BaseButton>
                 <BaseButton to="/register" size="sm">Register</BaseButton>
             </div>
 

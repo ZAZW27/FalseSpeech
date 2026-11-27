@@ -75,7 +75,7 @@ onMounted(refreshAccount)
 <template>
   <AppLayout title="Payment Status" subtitle="Midtrans checkout confirmation.">
     <section
-      class="mx-auto flex max-w-[560px] flex-col items-center rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center"
+      class="mx-auto flex max-w-[560px] flex-col items-center rounded-3xl border-2 border-white/10 bg-white/[0.04] p-8 text-center"
     >
       <span
         :class="['rounded-full border px-4 py-1 text-xs font-bold uppercase tracking-wider', statusMeta.tone]"
@@ -92,11 +92,11 @@ onMounted(refreshAccount)
 
       <dl
         v-if="orderId || userTier"
-        class="mt-6 w-full rounded-2xl border border-white/10 bg-back-prime/70 p-4 text-left text-sm"
+        class="mt-6 w-full rounded-2xl border-2 border-white/10 bg-back-prime/70 p-4 text-left text-sm"
       >
         <div v-if="orderId" class="flex justify-between py-1">
           <dt class="text-muted">Order ID</dt>
-          <dd class="font-mono text-white">{{ orderId }}</dd>
+          <dd class="tabular-nums text-white">{{ orderId }}</dd>
         </div>
         <div v-if="userTier" class="flex justify-between py-1">
           <dt class="text-muted">Active Tier</dt>

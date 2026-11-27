@@ -327,7 +327,7 @@ onBeforeUnmount(() => {
                         >
                         <span
                             :class="[
-                                'rounded-full px-2.5 py-0.5 font-mono text-xs font-semibold',
+                                'rounded-full px-2.5 py-0.5 tabular-nums text-xs font-semibold',
                                 otpExpiresIn === 0
                                     ? 'bg-red-100 text-red-600'
                                     : otpExpiresIn <= 60

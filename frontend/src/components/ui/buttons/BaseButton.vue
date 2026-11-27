@@ -51,7 +51,7 @@ const sizes = {
         :type="tag === 'button' ? type : undefined"
         :disabled="tag === 'button' ? disabled : undefined"
         :class="[
-            'inline-flex items-center justify-center gap-2 rounded-full font-semibold transition disabled:cursor-not-allowed disabled:opacity-50',
+            'inline-flex cursor-pointer select-none items-center justify-center gap-2 rounded-full font-semibold transition disabled:cursor-not-allowed disabled:opacity-50',
             variants[variant],
             sizes[size],
             block ? 'w-full' : '',

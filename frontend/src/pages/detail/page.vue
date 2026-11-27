@@ -167,7 +167,7 @@ onMounted(loadAccount);
 
                     <div
                         v-if="user"
-                        class="mt-8 inline-flex items-center gap-4 rounded-2xl border border-white/15 bg-white/[0.05] px-5 py-3.5 text-sm"
+                        class="mt-8 inline-flex items-center gap-4 rounded-2xl border-2 border-white/15 bg-white/[0.05] px-5 py-3.5 text-sm"
                     >
                         <span class="text-muted">Your Balance:</span>
                         <span class="text-base font-extrabold text-brand-green">
@@ -177,7 +177,7 @@ onMounted(loadAccount);
                 </div>
 
                 <div
-                    class="rounded-3xl border border-white/10 bg-white/[0.04] p-8 backdrop-blur md:p-10"
+                    class="rounded-3xl border-2 border-white/10 bg-white/[0.04] p-8 backdrop-blur md:p-10"
                 >
                     <h2 class="text-xl font-bold">What is included</h2>
                     <ul class="mt-6 flex flex-col gap-4">

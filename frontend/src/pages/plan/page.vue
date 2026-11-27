@@ -8,6 +8,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import PricingCard from '@/components/ui/cards/PricingCard.vue'
 import BaseButton from '@/components/ui/buttons/BaseButton.vue'
 import BaseModal from '@/components/ui/modals/BaseModal.vue'
+import PageSkeleton from '@/components/ui/skeletons/PageSkeleton.vue'
 
 const router = useRouter()
 
@@ -340,13 +341,13 @@ onMounted(loadPayments)
         <!-- Top section: two columns on desktop -->
         <div class="grid gap-6 lg:grid-cols-2">
           <!-- Current plan -->
-          <section class="rounded-3xl border border-back-secondary bg-back-secondary/40 p-6">
+          <section class="rounded-3xl border-2 border-back-secondary bg-back-secondary/40 p-6">
             <p class="text-[11px] font-semibold uppercase tracking-wider text-secondary/70">Current plan</p>
             <h2 class="mt-2 text-3xl font-extrabold text-white">{{ tierLabel(user.tier) }}</h2>
           </section>
 
           <!-- Usage -->
-          <section class="rounded-3xl border border-back-secondary bg-back-secondary/40 p-6">
+          <section class="rounded-3xl border-2 border-back-secondary bg-back-secondary/40 p-6">
             <p class="text-[11px] font-semibold uppercase tracking-wider text-secondary/70">Usage</p>
 
             <!-- Lifetime: no quota, show plain accent text instead of the bar -->
@@ -407,7 +408,7 @@ onMounted(loadPayments)
         <section>
           <h2 class="text-xl font-bold text-white">Payment history</h2>
 
-          <p v-if="historyLoading" class="mt-5 text-sm text-secondary/70" role="status">Loading payments...</p>
+          <PageSkeleton v-if="historyLoading" variant="payments" :show-header="false" />
 
           <div v-else-if="historyError" class="mt-5 flex flex-wrap items-center gap-4" role="alert">
             <p class="text-sm text-red-300">{{ historyError }}</p>
@@ -416,12 +417,12 @@ onMounted(loadPayments)
 
           <p
             v-else-if="!payments.length"
-            class="mt-5 rounded-3xl border border-back-secondary px-6 py-10 text-center text-sm text-secondary/70"
+            class="mt-5 rounded-3xl border-2 border-back-secondary px-6 py-10 text-center text-sm text-secondary/70"
           >
             No payments yet. Your invoices will appear here after you upgrade.
           </p>
 
-          <div v-else class="mt-5 rounded-3xl border border-back-secondary">
+          <div v-else class="mt-5 rounded-3xl border-2 border-back-secondary">
             <div class="overflow-x-auto">
               <div class="min-w-[640px]" role="table" aria-label="Payment history">
                 <div
@@ -497,7 +498,7 @@ onMounted(loadPayments)
       <BaseModal :model-value="upgradeOpen" label="Choose payment method" @update:model-value="closeUpgrade">
         <div class="rounded-t-3xl border border-back-secondary bg-back-prime p-6 text-white sm:p-8 md:rounded-3xl">
           <h2 class="text-2xl font-extrabold">Upgrade to {{ upgradePlan?.name }}</h2>
-          <div class="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-xs text-secondary/80">
+          <div class="mt-4 rounded-2xl border-2 border-white/10 bg-white/[0.03] p-4 text-xs text-secondary/80">
             <div class="flex justify-between">
               <span>Plan price</span>
               <span class="text-white">{{ formatRupiah(TIER_PRICE[toTier(upgradePlan?.id ?? '')] ?? 0) }}</span>

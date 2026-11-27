@@ -9,10 +9,10 @@ defineProps({
 </script>
 
 <template>
-  <article class="rounded-2xl border border-back-secondary bg-back-secondary/40 p-5">
+  <article class="rounded-2xl border-2 border-back-secondary bg-back-secondary/40 p-5">
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0">
-        <p class="font-mono text-sm text-secondary/70">{{ row.sessionId }}</p>
+        <p class="text-sm tabular-nums text-slate-400">{{ row.sessionId }}</p>
         <p class="mt-1 text-sm font-semibold">{{ row.date }}</p>
       </div>
       <StatusChip :label="row.meta.label" :tone="row.meta.tone" />

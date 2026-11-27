@@ -17,7 +17,7 @@ const bars = computed(() => [
 </script>
 
 <template>
-  <section class="flex flex-col rounded-3xl border border-back-secondary bg-back-secondary/40 p-6">
+  <section class="flex flex-col rounded-3xl border-2 border-back-secondary bg-back-secondary/40 p-6">
     <h2 class="text-lg font-bold">Confidence</h2>
     <p class="mt-1 text-xs text-secondary/70">Probability for the latest segment</p>
 

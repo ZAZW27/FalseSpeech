@@ -44,6 +44,36 @@ def init_db() -> None:
                     "payment_url TEXT"
                 )
             )
+            conn.execute(
+                text(
+                    "ALTER TABLE detection_sessions ADD COLUMN IF NOT EXISTS "
+                    "title VARCHAR(160)"
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE detection_sessions ADD COLUMN IF NOT EXISTS "
+                    "notes TEXT"
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE detection_sessions ADD COLUMN IF NOT EXISTS "
+                    "source VARCHAR(32) NOT NULL DEFAULT 'web'"
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE detection_segments ADD COLUMN IF NOT EXISTS "
+                    "duration_s DOUBLE PRECISION NOT NULL DEFAULT 0"
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE detection_segments ADD COLUMN IF NOT EXISTS "
+                    "recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+                )
+            )
     except Exception as e:
         logger.warning(f"Incremental column migration skipped: {e}")
     logger.info("Database tables ensured")

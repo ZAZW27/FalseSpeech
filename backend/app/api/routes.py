@@ -26,6 +26,7 @@ from app.schemas import (
     Tier, UpgradeReq, UpgradeRes,
     DowngradeReq, DowngradeRes,
     Invoice,
+    CreateSessionReq, UpdateSessionReq,
     DetectionSession, DetectionSegment, DetectionSessionDetail,
     OTPVerifyReq,
     ForgotPasswordReq, ResetPasswordReq,
@@ -34,6 +35,13 @@ from app.security.passwords import hash_pass, verify_pass
 from app.service import auth, inference
 from app.service.conn_manager import manager
 from app.service.email_service import send_otp_email, send_invoice_email
+from app.service.history_export import (
+    export_history_csv,
+    export_history_json,
+    export_history_md,
+    export_history_pdf,
+    export_history_txt,
+)
 from app.service.invoice import generate_invoice_html, generate_invoice_pdf
 from app.limiter import limiter
 from app.service.payment import create_payment_link, get_transaction_status
@@ -715,38 +723,243 @@ def get_invoice_pdf(order_id: str, user: User = Depends(get_curr_user), db: Sess
 
 
 # Detection History -----------------------------------------------
-@router.get("/api/history", response_model=list[DetectionSession], tags=["history"])
-def detection_history(
-        user: User = Depends(get_curr_user),
-        db: Session = Depends(get_db),
-    ):
-    rows = (
-        db.query(DetectionSessionRow)
-        .filter(DetectionSessionRow.user_id == user.id)
-        .order_by(DetectionSessionRow.id.desc())
-        .limit(100)
+def _parse_iso_dt(value: str | None, end_of_day: bool = False) -> datetime | None:
+    if not value:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    try:
+        # Handle YYYY-MM-DD date-only strings cleanly
+        if len(raw) == 10:
+            dt = datetime.fromisoformat(raw).replace(tzinfo=timezone.utc)
+            if end_of_day:
+                dt = dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+            return dt
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        return None
+
+
+def _query_filtered_sessions(
+    db: Session,
+    user_id: int,
+    verdict: str | None = None,
+    search: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    source: str | None = None,
+    limit: int = 200,
+) -> list[DetectionSessionRow]:
+    q = db.query(DetectionSessionRow).filter(DetectionSessionRow.user_id == user_id)
+
+    if verdict and verdict.lower() != "all":
+        v = verdict.lower()
+        if v == "has_fake":
+            q = q.filter(DetectionSessionRow.fake_count > 0)
+        elif v in ("real", "fake", "mixed"):
+            q = q.filter(DetectionSessionRow.verdict == v)
+
+    if source and source.lower() != "all":
+        q = q.filter(DetectionSessionRow.source == source.lower())
+
+    dt_start = _parse_iso_dt(start_date, end_of_day=False)
+    if dt_start is not None:
+        q = q.filter(DetectionSessionRow.started_at >= dt_start)
+
+    dt_end = _parse_iso_dt(end_date, end_of_day=True)
+    if dt_end is not None:
+        q = q.filter(DetectionSessionRow.started_at <= dt_end)
+
+    rows = q.order_by(DetectionSessionRow.id.desc()).limit(min(max(limit, 1), 500)).all()
+
+    if search and search.strip():
+        needle = search.strip().lower().lstrip("#")
+        filtered = []
+        for r in rows:
+            haystack = " ".join(
+                [
+                    str(r.id),
+                    r.title or "",
+                    r.notes or "",
+                    r.source or "",
+                    r.verdict or "",
+                    r.started_at.isoformat() if r.started_at else "",
+                ]
+            ).lower()
+            if needle in haystack:
+                filtered.append(r)
+        return filtered
+
+    return rows
+
+
+def _serialize_session(db: Session, r: DetectionSessionRow) -> DetectionSession:
+    segs = (
+        db.query(DetectionSegmentRow)
+        .filter(DetectionSegmentRow.session_id == r.id)
         .all()
     )
-    result = []
-    for r in rows:
-        result.append(
-            DetectionSession(
-                session_id=str(r.id),
-                started_at=r.started_at,
-                duration=r.duration_s,
-                fake_ratio=float(r.avg_fake_prob or 0.0),
-                verdict=r.verdict,
-            )
+    total_chunks = len(segs) or int(r.fake_count or 0) + int(r.real_count or 0)
+    max_fake = max((float(s.fake_prob or 0.0) for s in segs), default=float(r.avg_fake_prob or 0.0))
+    return DetectionSession(
+        session_id=str(r.id),
+        started_at=r.started_at,
+        ended_at=r.ended_at,
+        duration=r.duration_s,
+        fake_ratio=float(r.avg_fake_prob or 0.0),
+        verdict=r.verdict,
+        title=r.title,
+        notes=r.notes,
+        source=r.source or "web",
+        fake_count=int(r.fake_count or 0),
+        real_count=int(r.real_count or 0),
+        total_chunks=total_chunks,
+        max_fake_prob=max_fake,
+    )
+
+
+@router.post("/api/history/sessions", response_model=DetectionSession, status_code=status.HTTP_201_CREATED, tags=["history"])
+def create_detection_session(
+    body: CreateSessionReq | None = None,
+    user: User = Depends(get_curr_user),
+    db: Session = Depends(get_db),
+):
+    payload = body or CreateSessionReq()
+    row = DetectionSessionRow(
+        user_id=user.id,
+        title=(payload.title or "").strip() or None,
+        source=(payload.source or "web").strip().lower()[:32] or "web",
+        fake_count=0,
+        real_count=0,
+        avg_fake_prob=0.0,
+        verdict="real",
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _serialize_session(db, row)
+
+
+@router.get("/api/history", response_model=list[DetectionSession], tags=["history"])
+def detection_history(
+    verdict: str | None = None,
+    search: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    source: str | None = None,
+    limit: int = 200,
+    user: User = Depends(get_curr_user),
+    db: Session = Depends(get_db),
+):
+    rows = _query_filtered_sessions(
+        db=db,
+        user_id=user.id,
+        verdict=verdict,
+        search=search,
+        start_date=start_date,
+        end_date=end_date,
+        source=source,
+        limit=limit,
+    )
+    return [_serialize_session(db, r) for r in rows]
+
+
+@router.get("/api/history/export", tags=["history"])
+def export_detection_history(
+    format: str = "csv",
+    session_id: str | None = None,
+    verdict: str | None = None,
+    search: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    source: str | None = None,
+    user: User = Depends(get_curr_user),
+    db: Session = Depends(get_db),
+):
+    fmt = (format or "csv").strip().lower()
+    if fmt not in ("csv", "pdf", "txt", "json", "md"):
+        raise HTTPException(status_code=400, detail="Unsupported export format. Use csv, pdf, txt, md, or json.")
+
+    if session_id:
+        try:
+            sid = int(session_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Session tidak ditemukan")
+        row = (
+            db.query(DetectionSessionRow)
+            .filter(DetectionSessionRow.id == sid, DetectionSessionRow.user_id == user.id)
+            .first()
         )
-    return result
+        if row is None:
+            raise HTTPException(status_code=404, detail="Session tidak ditemukan")
+        rows = [row]
+    else:
+        rows = _query_filtered_sessions(
+            db=db,
+            user_id=user.id,
+            verdict=verdict,
+            search=search,
+            start_date=start_date,
+            end_date=end_date,
+            source=source,
+            limit=500,
+        )
+
+    items = []
+    for r in rows:
+        segs = (
+            db.query(DetectionSegmentRow)
+            .filter(DetectionSegmentRow.session_id == r.id)
+            .order_by(DetectionSegmentRow.offset_s.asc(), DetectionSegmentRow.id.asc())
+            .all()
+        )
+        items.append((r, segs))
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
+    suffix = f"session-{session_id}" if session_id else f"report-{stamp}"
+
+    if fmt == "csv":
+        content = export_history_csv(items, user.name, user.email)
+        media_type = "text/csv; charset=utf-8"
+        ext = "csv"
+    elif fmt == "pdf":
+        content = export_history_pdf(items, user.name, user.email)
+        media_type = "application/pdf"
+        ext = "pdf"
+    elif fmt == "txt":
+        content = export_history_txt(items, user.name, user.email)
+        media_type = "text/plain; charset=utf-8"
+        ext = "txt"
+    elif fmt == "md":
+        content = export_history_md(items, user.name, user.email)
+        media_type = "text/markdown; charset=utf-8"
+        ext = "md"
+    else:
+        content = export_history_json(items, user.name, user.email)
+        media_type = "application/json; charset=utf-8"
+        ext = "json"
+
+    filename = f"FalseSpeech-HR-{suffix}.{ext}"
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 @router.get("/api/history/{session_id}", response_model=DetectionSessionDetail, tags=["history"])
 def detection_history_detail(
-        session_id: str,
-        user: User = Depends(get_curr_user),
-        db: Session = Depends(get_db),
-    ):
+    session_id: str,
+    user: User = Depends(get_curr_user),
+    db: Session = Depends(get_db),
+):
     try:
         sid = int(session_id)
     except ValueError:
@@ -764,20 +977,88 @@ def detection_history_detail(
     segs = (
         db.query(DetectionSegmentRow)
         .filter(DetectionSegmentRow.session_id == row.id)
-        .order_by(DetectionSegmentRow.offset_s.asc())
+        .order_by(DetectionSegmentRow.offset_s.asc(), DetectionSegmentRow.id.asc())
         .all()
     )
     return DetectionSessionDetail(
         session_id=str(row.id),
+        title=row.title,
+        notes=row.notes,
+        source=row.source or "web",
+        started_at=row.started_at,
+        ended_at=row.ended_at,
+        duration=row.duration_s,
+        fake_ratio=float(row.avg_fake_prob or 0.0),
+        verdict=row.verdict,
+        fake_count=int(row.fake_count or 0),
+        real_count=int(row.real_count or 0),
         segments=[
             DetectionSegment(
+                id=s.id,
                 offset=s.offset_s,
+                duration_s=float(getattr(s, "duration_s", 0.0) or 0.0),
                 is_fake=s.is_fake,
                 fake_prob=s.fake_prob,
+                real_prob=float(s.real_prob or 0.0),
+                recorded_at=getattr(s, "recorded_at", None) or row.started_at,
             )
             for s in segs
         ],
     )
+
+
+@router.patch("/api/history/{session_id}", response_model=DetectionSession, tags=["history"])
+def update_detection_session(
+    session_id: str,
+    body: UpdateSessionReq,
+    user: User = Depends(get_curr_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        sid = int(session_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Session tidak ditemukan")
+
+    row = (
+        db.query(DetectionSessionRow)
+        .filter(DetectionSessionRow.id == sid, DetectionSessionRow.user_id == user.id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Session tidak ditemukan")
+
+    if body.title is not None:
+        row.title = body.title.strip() or None
+    if body.notes is not None:
+        row.notes = body.notes.strip() or None
+
+    db.commit()
+    db.refresh(row)
+    return _serialize_session(db, row)
+
+
+@router.delete("/api/history/{session_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["history"])
+def delete_detection_session(
+    session_id: str,
+    user: User = Depends(get_curr_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        sid = int(session_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Session tidak ditemukan")
+
+    row = (
+        db.query(DetectionSessionRow)
+        .filter(DetectionSessionRow.id == sid, DetectionSessionRow.user_id == user.id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Session tidak ditemukan")
+
+    db.delete(row)
+    db.commit()
+    return None
 
 
 # Payment Finalization & Webhook -----------------------------------------------

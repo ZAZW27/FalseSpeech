@@ -6,6 +6,7 @@ const props = defineProps({
   modelValue: { type: Boolean, required: true },
   label: { type: String, default: 'Dialog' },
   maxWidthClass: { type: String, default: 'md:max-w-[480px]' },
+  transition: { type: String, default: 'sheet' }, // 'sheet' | 'crt'
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -24,22 +25,28 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 <template>
   <Teleport to="body">
-    <div
-      v-if="modelValue"
-      class="fixed inset-0 z-[60] flex items-end justify-center md:items-center md:p-6"
-      role="dialog"
-      aria-modal="true"
-      :aria-label="label"
+    <Transition
+      :name="transition === 'crt' ? 'crt-modal' : 'modal-fade'"
+      :duration="transition === 'crt' ? { enter: 460, leave: 400 } : 250"
     >
-      <div class="absolute inset-0 animate-fade-in bg-navy-950/80 backdrop-blur-sm" @click="close" />
       <div
-        :class="[
-          'relative w-full animate-sheet-up rounded-t-3xl border border-white/10 bg-navy-900 shadow-[0_30px_80px_rgba(0,0,0,0.5)] md:rounded-3xl',
-          maxWidthClass,
-        ]"
+        v-if="modelValue"
+        class="fixed inset-0 z-[60] flex items-end justify-center md:items-center md:p-6"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="label"
       >
-        <slot />
+        <div class="crt-modal-backdrop absolute inset-0 bg-black/70 backdrop-blur-sm" @click="close" />
+        <div
+          :class="[
+            'crt-modal-card relative w-full rounded-t-3xl border border-white/10 bg-navy-900 shadow-[0_30px_80px_rgba(0,0,0,0.5)] md:rounded-3xl',
+            transition !== 'crt' ? 'animate-sheet-up' : '',
+            maxWidthClass,
+          ]"
+        >
+          <slot />
+        </div>
       </div>
-    </div>
+    </Transition>
   </Teleport>
 </template>

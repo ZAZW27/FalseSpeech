@@ -1,6 +1,6 @@
 <script setup>
-import { onMounted, provide, ref } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { computed, onMounted, provide, ref } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { brand } from '@/assets/data/site'
 import { authFetch, clearToken, getToken } from '@/assets/js/api'
 import { useBodyScrollLock } from '@/assets/js/useBodyScrollLock'
@@ -8,6 +8,7 @@ import AppSidebar from '@/components/layout/AppSidebar.vue'
 import BaseButton from '@/components/ui/buttons/BaseButton.vue'
 import IconButton from '@/components/ui/buttons/IconButton.vue'
 import Icon from '@/components/ui/icons/Icon.vue'
+import PageSkeleton from '@/components/ui/skeletons/PageSkeleton.vue'
 
 // Default topbar text. Pages can replace it with the "topbar" slot.
 defineProps({
@@ -15,16 +16,40 @@ defineProps({
   subtitle: { type: String, default: '' },
 })
 
+const route = useRoute()
 const router = useRouter()
 
-// GET /api/users/me -> { name, tier, quota_used, quota_limit }
-const user = ref(null)
-const isLoading = ref(true)
+const skeletonVariant = computed(() => {
+  const path = route.path || ''
+  if (path.startsWith('/history')) return 'history'
+  if (path.startsWith('/plan')) return 'plan'
+  if (path.startsWith('/profile')) return 'profile'
+  if (path.startsWith('/dashboard')) return 'dashboard'
+  return 'default'
+})
+
+const USER_CACHE_KEY = 'fs_cache_user'
+const readCachedUser = () => {
+  try {
+    const raw = localStorage.getItem(USER_CACHE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+// GET /api/users/me -> { name, tier, quota_used, quota_limit, balance }
+const cachedInitial = getToken() ? readCachedUser() : null
+const user = ref(cachedInitial)
+const isLoading = ref(!cachedInitial)
 const errorMessage = ref('')
 const drawerOpen = ref(false)
 
 const logout = () => {
   drawerOpen.value = false
+  try {
+    localStorage.removeItem(USER_CACHE_KEY)
+  } catch {}
   clearToken()
   router.replace('/login')
 }
@@ -35,7 +60,7 @@ const loadUser = async () => {
     return
   }
 
-  isLoading.value = true
+  if (!user.value) isLoading.value = true
   errorMessage.value = ''
 
   try {
@@ -48,9 +73,15 @@ const loadUser = async () => {
     }
     if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
 
-    user.value = await response.json()
+    const fresh = await response.json()
+    user.value = fresh
+    try {
+      localStorage.setItem(USER_CACHE_KEY, JSON.stringify(fresh))
+    } catch {}
   } catch {
-    errorMessage.value = 'We could not load your account. Please check your connection and try again.'
+    if (!user.value) {
+      errorMessage.value = 'We could not load your account. Please check your connection and try again.'
+    }
   } finally {
     isLoading.value = false
   }
@@ -125,10 +156,8 @@ onMounted(loadUser)
         <BaseButton class="mt-6" @click="loadUser">Try again</BaseButton>
       </div>
 
-      <!-- Loading -->
-      <p v-else-if="isLoading" class="mt-24 text-center text-sm text-secondary/70" role="status">
-        Loading your account...
-      </p>
+      <!-- Loading wireframe shimmer -->
+      <PageSkeleton v-else-if="isLoading" :variant="skeletonVariant" />
     </main>
   </div>
 </template>
