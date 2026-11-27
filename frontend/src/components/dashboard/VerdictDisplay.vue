@@ -35,7 +35,7 @@ const probs = computed(() => {
     <p class="mt-3 text-sm text-secondary/70">{{ probs }}</p>
     <p
       v-if="statusText"
-      :class="['mt-2 font-mono text-xs', statusWarn ? 'font-semibold text-secondary' : 'text-secondary/60']"
+      :class="['mt-2 text-xs', statusWarn ? 'font-semibold text-slate-200' : 'text-slate-400']"
     >
       {{ statusText }}
     </p>

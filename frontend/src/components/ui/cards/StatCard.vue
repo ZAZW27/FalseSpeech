@@ -27,17 +27,17 @@ const values = {
 </script>
 
 <template>
-  <article class="flex flex-col rounded-3xl border border-back-secondary bg-back-secondary/40 p-5 sm:p-6">
+  <article class="flex flex-col rounded-3xl border-2 border-back-secondary bg-back-secondary/40 p-5 sm:p-6">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-      <span :class="['flex size-[38px] shrink-0 items-center justify-center rounded-xl', tiles[tone]]">
+      <span class="flex size-[38px] shrink-0 items-center justify-center rounded-xl bg-white/10 text-slate-100">
         <Icon :name="icon" :size="18" />
       </span>
-      <p class="text-sm text-secondary/70">{{ label }}</p>
+      <p class="text-sm text-slate-300">{{ label }}</p>
     </div>
 
-    <p :class="['mt-5 text-3xl font-extrabold leading-none sm:text-[36px]', values[tone]]">{{ value }}</p>
+    <p class="mt-5 text-3xl font-extrabold leading-none text-slate-100 sm:text-[36px]">{{ value }}</p>
 
-    <p v-if="sub" class="mt-4 text-xs text-secondary/70">{{ sub }}</p>
-    <ConfidenceBar v-if="progress !== null" :value="progress" tone="lime" class="mt-3" />
+    <p v-if="sub" class="mt-4 text-xs text-slate-400">{{ sub }}</p>
+    <ConfidenceBar v-if="progress !== null" :value="progress" tone="success" class="mt-3" />
   </article>
 </template>

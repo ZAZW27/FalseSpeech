@@ -4,16 +4,18 @@ defineProps({
   tone: { type: String, default: 'success', validator: (v) => ['danger', 'success', 'lime'].includes(v) },
 })
 
-const tones = {
-  danger: 'border-red-400/40 bg-red-400/10 text-red-400',
-  success: 'border-brand-green/40 bg-brand-green/10 text-brand-green',
-  lime: 'border-brand-green/40 bg-brand-green/10 text-secondary',
+const dotColors = {
+  danger: 'bg-red-400',
+  success: 'bg-brand-green',
+  lime: 'bg-brand-green',
 }
 </script>
 
 <template>
-  <span :class="['inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold', tones[tone]]">
-    <span class="size-1.5 rounded-full bg-current" />
+  <span
+    class="inline-flex items-center gap-2 rounded-full border-2 border-white/30 bg-transparent px-3 py-1 text-xs font-semibold text-slate-100"
+  >
+    <span :class="['size-1.5 rounded-full', dotColors[tone]]" />
     {{ label }}
   </span>
 </template>

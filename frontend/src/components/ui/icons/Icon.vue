@@ -7,6 +7,11 @@ import playUrl from "./play.svg";
 import pauseUrl from "./pause.svg";
 import logoutUrl from "./logout.svg";
 import personUrl from "./person.svg";
+import penUrl from "./pen.svg";
+import flagUrl from "./flag.svg";
+import downloadUrl from "./download.svg";
+import searchUrl from "./search.svg";
+import burgerUrl from "./burger.svg";
 import logoUrl from "./icon.svg";
 
 // Needs the Font Awesome 6 stylesheet once in index.html:
@@ -28,6 +33,12 @@ const svgIcons = {
     logout: logoutUrl,
     profile: personUrl,
     user: personUrl,
+    pen: penUrl,
+    flag: flagUrl,
+    download: downloadUrl,
+    search: searchUrl,
+    menu: burgerUrl,
+    burger: burgerUrl,
     logo: logoUrl,
     waveform: logoUrl, // old name, kept so older usages still show the app icon
 };

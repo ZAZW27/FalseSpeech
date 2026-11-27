@@ -76,22 +76,50 @@ async def websocket_endpoint(websocket: WebSocket):
 
     logger.info(f"WS connected user={user.id} tier={user.tier} quota={user.quota_used}/{user.quota_limit}")
     _, device_used = inference.get_model()
-    
-    session = DetectionSessionRow(
-        user_id=user.id,
-        fake_count=0,
-        real_count=0,
-        verdict="real",
-    )
-    db.add(session)
-    db.commit()
-    db.refresh(session)
-    session_id = session.id
 
-    segment_index = 0
-    fake_count = 0
-    real_count = 0
-    total_fek_prob = 0.0
+    # Reuse an existing DetectionSessionRow when the client passes ?session_id=<id>,
+    # so all chunks recorded in one listening run are grouped under one session!
+    req_session_id = websocket.query_params.get("session_id")
+    req_source = (websocket.query_params.get("source") or "web").strip().lower()[:32] or "web"
+    session = None
+    created_new_session = False
+
+    if req_session_id:
+        try:
+            sid_int = int(req_session_id)
+            session = (
+                db.query(DetectionSessionRow)
+                .filter(
+                    DetectionSessionRow.id == sid_int,
+                    DetectionSessionRow.user_id == user.id,
+                )
+                .first()
+            )
+        except (ValueError, TypeError):
+            session = None
+
+    if session is None:
+        session = DetectionSessionRow(
+            user_id=user.id,
+            source=req_source,
+            fake_count=0,
+            real_count=0,
+            verdict="real",
+        )
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+        created_new_session = True
+
+    session_id = session.id
+    existing_seg_count = (
+        db.query(DetectionSegmentRow)
+        .filter(DetectionSegmentRow.session_id == session_id)
+        .count()
+    )
+
+    segment_index = existing_seg_count
+    new_chunks_count = 0
     total_audio_seconds = 0.0
     started = datetime.now(timezone.utc)
 
@@ -134,20 +162,18 @@ async def websocket_endpoint(websocket: WebSocket):
             ril_prob, fek_prob = await inference.enqueue_inference(wav_tensor, user.tier)
             is_fake = fek_prob > 0.5
 
-            total_fek_prob += float(fek_prob)
             total_audio_seconds += chunk_seconds
             segment_index += 1
-            if is_fake:
-                fake_count += 1
-            else:
-                real_count += 1
+            new_chunks_count += 1
 
             seg = DetectionSegmentRow(
                 session_id=session_id,
                 offset_s=segment_index,
+                duration_s=round(float(chunk_seconds), 2),
                 is_fake=is_fake,
                 fake_prob=float(fek_prob),
                 real_prob=float(ril_prob),
+                recorded_at=datetime.now(timezone.utc),
             )
             db.add(seg)
             db.commit()
@@ -173,40 +199,59 @@ async def websocket_endpoint(websocket: WebSocket):
             pass
     finally:
         ended = datetime.now(timezone.utc)
-        duration = int((ended - started).total_seconds())
-
-        total = fake_count + real_count
-        avg_fake_prob = (total_fek_prob / total) if total > 0 else 0.0
-
-        if total == 0:
-            verdict = "real"
-        elif fake_count / total >= 0.5:
-            verdict = "fake"
-        elif fake_count / total <= 0.1:
-            verdict = "real"
-        else:
-            verdict = "mixed"
-
         try:
-            session.ended_at = ended
-            session.duration_s = duration
-            session.fake_count = fake_count
-            session.real_count = real_count
-            session.avg_fake_prob = avg_fake_prob
-            session.verdict = verdict
-
-            user.quota_used = user.quota_used + int(total_audio_seconds)
-            user.cycle_quota_used = int(user.cycle_quota_used or 0) + int(total_audio_seconds)
-
-            db.commit()
-            logger.info(
-                f"session {session_id} closed: user={user.id} "
-                f"fake={fake_count} real={real_count} avg_fake_prob={avg_fake_prob:.3f} verdict={verdict} "
-                f"audio_seconds={int(total_audio_seconds)} "
-                f"quota={user.quota_used}/{user.quota_limit}"
+            all_segs = (
+                db.query(DetectionSegmentRow)
+                .filter(DetectionSegmentRow.session_id == session_id)
+                .all()
             )
+            total = len(all_segs)
+            if total == 0 and created_new_session:
+                # Avoid leaving empty phantom sessions if WS closed before any chunk
+                db.delete(session)
+                db.commit()
+            else:
+                fake_count = sum(1 for s in all_segs if s.is_fake)
+                real_count = total - fake_count
+                avg_fake_prob = (
+                    sum(float(s.fake_prob or 0.0) for s in all_segs) / total
+                    if total > 0
+                    else 0.0
+                )
+                if total == 0:
+                    verdict = "real"
+                elif fake_count / total >= 0.5:
+                    verdict = "fake"
+                elif fake_count / total <= 0.1:
+                    verdict = "real"
+                else:
+                    verdict = "mixed"
+
+                sess_start = session.started_at
+                if sess_start and sess_start.tzinfo is None:
+                    sess_start = sess_start.replace(tzinfo=timezone.utc)
+                wall_duration = int((ended - sess_start).total_seconds()) if sess_start else int((ended - started).total_seconds())
+                seg_duration = int(round(sum(float(getattr(s, "duration_s", 0.0) or 0.0) for s in all_segs)))
+
+                session.ended_at = ended
+                session.duration_s = max(wall_duration, seg_duration, 1 if total > 0 else 0)
+                session.fake_count = fake_count
+                session.real_count = real_count
+                session.avg_fake_prob = avg_fake_prob
+                session.verdict = verdict
+
+                if int(total_audio_seconds) > 0:
+                    user.quota_used = user.quota_used + int(total_audio_seconds)
+                    user.cycle_quota_used = int(user.cycle_quota_used or 0) + int(total_audio_seconds)
+
+                db.commit()
+                logger.info(
+                    f"session {session_id} updated: user={user.id} chunks={total} (+{new_chunks_count}) "
+                    f"fake={fake_count} real={real_count} avg_fake_prob={avg_fake_prob:.3f} verdict={verdict} "
+                    f"audio_seconds={int(total_audio_seconds)} quota={user.quota_used}/{user.quota_limit}"
+                )
         except Exception as e:
-            logger.error(f"failed to close session: {e}")
+            logger.error(f"failed to finalize session: {e}")
         finally:
             manager.disconnect(user.id)
             db.close()

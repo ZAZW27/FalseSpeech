@@ -78,6 +78,167 @@
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-lime-400;
   }
+
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  a[href],
+  select:not(:disabled),
+  summary {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  button:disabled,
+  select:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@keyframes skeleton-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.skeleton-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(183, 216, 148, 0.14) 42%,
+    rgba(255, 255, 255, 0.18) 50%,
+    rgba(183, 216, 148, 0.14) 58%,
+    transparent 100%
+  );
+  animation: skeleton-sweep 1.5s ease-in-out infinite;
+}
+
+/* Classic CRT Television Turn-On / Turn-Off animation for Live Terminal */
+@keyframes crt-turn-on {
+  0% {
+    transform: scaleX(0.015) scaleY(0.012);
+    opacity: 0;
+    filter: brightness(3) drop-shadow(0 0 18px rgba(183, 216, 148, 0.9));
+  }
+  38% {
+    transform: scaleX(1) scaleY(0.018);
+    opacity: 1;
+    filter: brightness(2.4) drop-shadow(0 0 14px rgba(183, 216, 148, 0.8));
+  }
+  52% {
+    transform: scaleX(1) scaleY(0.03);
+    opacity: 1;
+    filter: brightness(2.1);
+  }
+  100% {
+    transform: scaleX(1) scaleY(1);
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
+@keyframes crt-turn-off {
+  0% {
+    transform: scaleX(1) scaleY(1);
+    opacity: 1;
+    filter: brightness(1);
+  }
+  48% {
+    transform: scaleX(1) scaleY(0.02);
+    opacity: 1;
+    filter: brightness(2.6) drop-shadow(0 0 16px rgba(183, 216, 148, 0.9));
+  }
+  82% {
+    transform: scaleX(0.06) scaleY(0.016);
+    opacity: 0.9;
+    filter: brightness(3.2);
+  }
+  100% {
+    transform: scaleX(0.005) scaleY(0.005);
+    opacity: 0;
+    filter: brightness(3.5);
+  }
+}
+
+.crt-screen-on {
+  transform-origin: center center;
+  animation: crt-turn-on 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.crt-screen-off {
+  transform-origin: center center;
+  animation: crt-turn-off 0.38s cubic-bezier(0.55, 0.055, 0.675, 0.19) both;
+}
+
+/* Modal CRT TV Turn-On / Turn-Off (drives both enter and leave cleanly) */
+.crt-modal-enter-active,
+.crt-modal-leave-active {
+  transition: opacity 0.45s ease;
+}
+
+.crt-modal-enter-active .crt-modal-backdrop {
+  animation: fade-in 0.25s ease-out both;
+}
+
+.crt-modal-leave-active .crt-modal-backdrop {
+  animation: fade-in 0.35s ease-in reverse both;
+}
+
+.crt-modal-enter-active .crt-modal-card {
+  transform-origin: center center;
+  animation: crt-turn-on 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.crt-modal-leave-active .crt-modal-card {
+  transform-origin: center center;
+  animation: crt-turn-off 0.38s cubic-bezier(0.55, 0.055, 0.675, 0.19) both;
+}
+
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.25s ease;
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
+}
+
+/* Mobile Drawer slide-in / slide-out animation */
+.drawer-slide-enter-active,
+.drawer-slide-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.drawer-slide-enter-active .drawer-backdrop,
+.drawer-slide-leave-active .drawer-backdrop {
+  transition: opacity 0.3s ease;
+}
+
+.drawer-slide-enter-from .drawer-backdrop,
+.drawer-slide-leave-to .drawer-backdrop {
+  opacity: 0;
+}
+
+.drawer-slide-enter-active .drawer-panel,
+.drawer-slide-leave-active .drawer-panel {
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.drawer-slide-enter-from .drawer-panel,
+.drawer-slide-leave-to .drawer-panel {
+  transform: translateX(100%);
 }
 
 @media (prefers-reduced-motion: reduce) {

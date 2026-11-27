@@ -1,5 +1,5 @@
 import { onBeforeUnmount, onMounted, ref, watch, computed } from 'vue'
-import { WS_BASE, clearToken, getToken } from '@/assets/js/api'
+import { WS_BASE, authFetch, clearToken, getToken } from '@/assets/js/api'
 
 // Ported from the legacy HTML/JS detector.
 const SILENCE_THRESHOLD_BYTES = 10000 // blobs smaller than this are flagged as silence
@@ -10,6 +10,63 @@ const MAX_LOGS = 200
 const MAX_HISTORY = 100
 const EXPIRED_REDIRECT_MS = 1500
 const FUP_MARKER = 'fair usage policy exceeded'
+
+const PREF_KEYS = {
+  chunkSize: 'fs_pref_chunk_size',
+  mode: 'fs_pref_capture_mode',
+  device: 'fs_pref_audio_device',
+  verifiedDevices: 'fs_pref_verified_devices',
+}
+
+const RECORDER_MIME_CANDIDATES = [
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/ogg;codecs=opus',
+  'audio/ogg',
+  'audio/mp4',
+]
+
+const pickSupportedMime = () => {
+  if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return ''
+  return RECORDER_MIME_CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m)) ?? ''
+}
+
+const readPref = (key, fallback) => {
+  try {
+    const val = localStorage.getItem(key)
+    return val !== null ? val : fallback
+  } catch {
+    return fallback
+  }
+}
+
+const loadVerifiedDevices = () => {
+  try {
+    const raw = localStorage.getItem(PREF_KEYS.verifiedDevices)
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+const writePref = (key, value) => {
+  try {
+    localStorage.setItem(key, String(value))
+  } catch {
+    // Ignore private-mode storage quota errors
+  }
+}
+
+const loadSavedChunkSize = () => {
+  const n = Number(readPref(PREF_KEYS.chunkSize, '10'))
+  return Number.isFinite(n) && n >= 1 && n <= 15 ? Math.round(n) : 10
+}
+
+const loadSavedMode = () => {
+  const m = readPref(PREF_KEYS.mode, 'monitor')
+  return m === 'tab' || m === 'monitor' ? m : 'monitor'
+}
 
 const NO_PROCESSING = { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
 
@@ -31,9 +88,18 @@ export function useAudioCapture(options = {}) {
   const liveLogs = ref([]) // { id, time, text, tone: 'fake' | 'real' | 'warn' | 'muted' }
   const history = ref([]) // live inference history, newest first
   const devices = ref([]) // { deviceId, label }
-  const selectedDevice = ref('')
-  const mode = ref('monitor') // 'monitor' (Mode A) | 'tab' (Mode B)
-  const chunkSize = ref(10) // seconds, 1 to 15
+  const verifiedDevices = ref(loadVerifiedDevices()) // deviceIds confirmed to carry audio signal
+  const selectedDevice = ref(readPref(PREF_KEYS.device, ''))
+  const mode = ref(loadSavedMode()) // 'monitor' (Mode A) | 'tab' (Mode B)
+  const chunkSize = ref(loadSavedChunkSize()) // seconds, 1 to 15
+
+  const markVerifiedDevices = (ids) => {
+    const unique = [...new Set((ids || []).filter(Boolean))]
+    verifiedDevices.value = unique
+    try {
+      localStorage.setItem(PREF_KEYS.verifiedDevices, JSON.stringify(unique))
+    } catch {}
+  }
   const volume = ref(0) // 0 to 100
   const statusText = ref('')
   const statusWarn = ref(false)
@@ -48,6 +114,7 @@ export function useAudioCapture(options = {}) {
   let displayStream = null // full getDisplayMedia stream, kept so its video track can be stopped
   let chunkTimer = null
   let sessionId = 0 // bumped on start and stop, so late results from old sessions are ignored
+  let backendSessionId = null // server DetectionSessionRow.id shared by all chunks in this listening run
   let isStarting = false
   let logId = 0
   let audioCtx = null
@@ -60,8 +127,17 @@ export function useAudioCapture(options = {}) {
     if (liveLogs.value.length > MAX_LOGS) liveLogs.value.splice(0, liveLogs.value.length - MAX_LOGS)
   }
 
-  // The slider can change at any time. The next chunk uses the new value.
-  watch(chunkSize, (value) => pushLog(`chunk size -> ${value}s`))
+  // Persist user preferences so scaler, capture mode, and input device survive reloads.
+  watch(chunkSize, (value) => {
+    writePref(PREF_KEYS.chunkSize, value)
+    pushLog(`chunk size -> ${value}s`)
+  })
+  watch(mode, (value) => {
+    writePref(PREF_KEYS.mode, value)
+  })
+  watch(selectedDevice, (value) => {
+    if (value) writePref(PREF_KEYS.device, value)
+  })
 
   // ---------- Devices (Mode A) ----------
   const refreshDevices = async () => {
@@ -84,6 +160,15 @@ export function useAudioCapture(options = {}) {
       }))
     pushLog(`found ${devices.value.length} audio inputs`)
 
+    // Prefer user's previously cached audio device if still connected
+    const savedId = readPref(PREF_KEYS.device, '')
+    const savedMatch = savedId && devices.value.find((device) => device.deviceId === savedId)
+    if (savedMatch) {
+      selectedDevice.value = savedMatch.deviceId
+      pushLog(`restored preferred input: ${savedMatch.label}`)
+      return
+    }
+
     const monitor = devices.value.find((device) => device.label.toLowerCase().includes('monitor'))
     if (monitor) {
       selectedDevice.value = monitor.deviceId
@@ -96,30 +181,57 @@ export function useAudioCapture(options = {}) {
   // ---------- Capture modes ----------
   const openMonitor = async () => {
     if (!selectedDevice.value) throw new Error('Pick a device first.')
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { deviceId: { exact: selectedDevice.value }, ...NO_PROCESSING },
-    })
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { exact: selectedDevice.value }, ...NO_PROCESSING },
+      })
+    } catch {
+      // Fallback for browsers (e.g. Brave/Safari/Firefox) that reject strict exact/NO_PROCESSING constraints
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: selectedDevice.value },
+      })
+    }
     const label = devices.value.find((device) => device.deviceId === selectedDevice.value)?.label
     pushLog(`mode A - capturing from: ${label ?? selectedDevice.value}`)
   }
 
   const openTab = async () => {
-    const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: NO_PROCESSING })
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      throw new Error('This browser does not support screen/system audio sharing. Use Mode A instead.')
+    }
+    let display
+    try {
+      // Google Meet–style display capture: enables "Also share system audio" on Chrome, Brave & Edge
+      display = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: { ...NO_PROCESSING, suppressLocalAudioPlayback: false },
+        systemAudio: 'include',
+        selfBrowserSurface: 'include',
+        surfaceSwitching: 'include',
+      })
+    } catch (err) {
+      // Fallback for Firefox/Safari if Chromium-specific keys throw TypeError/OverconstrainedError
+      if (err?.name === 'NotAllowedError' || err?.name === 'AbortError') throw err
+      display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+    }
     const audioTracks = display.getAudioTracks()
 
     if (audioTracks.length === 0) {
-      pushLog('mode B - NO AUDIO TRACK. Did you check "Share tab audio"?', 'warn')
+      pushLog('mode B - NO AUDIO TRACK. Check "Share tab audio" or "Share system audio".', 'warn')
       display.getTracks().forEach((track) => track.stop())
-      throw new Error('No audio track. Enable "Share tab audio" when choosing the tab.')
+      throw new Error('No audio track shared. Enable "Share tab audio" or "Share system audio" in the picker.')
     }
 
     displayStream = display
-    display.getVideoTracks()[0].onended = () => {
-      pushLog('user stopped sharing')
-      stopCapture()
+    const videoTrack = display.getVideoTracks()[0]
+    if (videoTrack) {
+      videoTrack.onended = () => {
+        pushLog('user stopped sharing')
+        stopCapture()
+      }
     }
     stream = new MediaStream(audioTracks)
-    pushLog('mode B - tab audio captured')
+    pushLog('mode B - tab/system audio captured')
   }
 
   // ---------- Visualizer ----------
@@ -162,8 +274,7 @@ export function useAudioCapture(options = {}) {
 
     const currentSession = sessionId
     const chunks = []
-    let mime = 'audio/webm'
-    if (!MediaRecorder.isTypeSupported(mime)) mime = ''
+    const mime = pickSupportedMime()
 
     const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
     recorder.ondataavailable = (event) => {
@@ -176,7 +287,7 @@ export function useAudioCapture(options = {}) {
         pushLog('empty chunk', 'warn')
         return
       }
-      sendChunk(new Blob(chunks, { type: mime || 'audio/webm' }), currentSession)
+      sendChunk(new Blob(chunks, { type: mime || recorder.mimeType || 'audio/webm' }), currentSession)
     }
 
     recorder.start()
@@ -194,12 +305,15 @@ export function useAudioCapture(options = {}) {
   }
 
   // One WebSocket per chunk: connect, send the blob, read one result, close.
+  // All chunks in the same listening run pass the same backendSessionId so they group under one session.
   const sendChunk = (blob, currentSession) => {
     const silent = blob.size < SILENCE_THRESHOLD_BYTES
     statusText.value = `chunk: ${blob.size} bytes${silent ? ' -- LIKELY SILENCE' : ''}`
     statusWarn.value = silent
 
-    const ws = new WebSocket(`${WS_BASE}/ws/audio?token=${encodeURIComponent(getToken() ?? '')}`)
+    const qs = new URLSearchParams({ token: getToken() ?? '', source: 'web' })
+    if (backendSessionId) qs.set('session_id', String(backendSessionId))
+    const ws = new WebSocket(`${WS_BASE}/ws/audio?${qs.toString()}`)
     ws.binaryType = 'arraybuffer'
 
     ws.onopen = async () => {
@@ -211,6 +325,7 @@ export function useAudioCapture(options = {}) {
       try {
         const data = JSON.parse(event.data)
         if (currentSession !== sessionId) return // session was stopped meanwhile
+        if (data.session_id && !backendSessionId) backendSessionId = data.session_id
 
         if (data.error) {
           pushLog(`error: ${data.error}`, 'warn')
@@ -309,11 +424,30 @@ export function useAudioCapture(options = {}) {
 
     isStarting = false
     sessionId += 1
+    backendSessionId = null
     isListening.value = true
     currentResult.value = null
     history.value = [] // new session starts with an empty history
     statusText.value = ''
     statusWarn.value = false
+
+    // Create one server-side session upfront so every chunk in this listening run shares one session_id
+    try {
+      const res = await authFetch('/api/history/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'web' }),
+      })
+      if (res.ok) {
+        const created = await res.json()
+        if (created?.session_id) {
+          backendSessionId = created.session_id
+          pushLog(`started listening session #${backendSessionId}`)
+        }
+      }
+    } catch {
+      // Fallback: first WS chunk will auto-create and return session_id
+    }
 
     startVisualizer(stream)
     recordChunk()
@@ -324,6 +458,7 @@ export function useAudioCapture(options = {}) {
     if (!isListening.value) return
     isListening.value = false
     sessionId += 1
+    backendSessionId = null
     clearTimeout(chunkTimer)
     chunkTimer = null
     releaseStreams()
@@ -349,6 +484,8 @@ export function useAudioCapture(options = {}) {
     liveLogs,
     history,
     devices,
+    verifiedDevices,
+    markVerifiedDevices,
     selectedDevice,
     mode,
     chunkSize,

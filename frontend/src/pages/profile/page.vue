@@ -7,6 +7,9 @@ import AppLayout from "@/components/layout/AppLayout.vue";
 import BaseButton from "@/components/ui/buttons/BaseButton.vue";
 import FormField from "@/components/ui/inputs/FormField.vue";
 import Icon from "@/components/ui/icons/Icon.vue";
+import PlanTag from "@/components/ui/badges/PlanTag.vue";
+import PageSkeleton from "@/components/ui/skeletons/PageSkeleton.vue";
+import LogoutConfirmPopover from "@/components/ui/modals/LogoutConfirmPopover.vue";
 
 const TIER_LABELS = {
     free: "Free",
@@ -228,18 +231,12 @@ onMounted(loadUser);
         subtitle="Manage your personal information."
     >
         <!-- Loading -->
-        <p
-            v-if="isLoading"
-            class="py-16 text-center text-sm text-muted"
-            role="status"
-        >
-            Loading profile...
-        </p>
+        <PageSkeleton v-if="isLoading" variant="profile" :show-header="false" />
 
         <!-- Load error -->
         <div
             v-else-if="!user"
-            class="rounded-3xl border border-danger/30 bg-danger/10 p-8 text-center"
+            class="rounded-3xl border-2 border-danger/30 bg-danger/10 p-8 text-center"
             role="alert"
         >
             <p class="text-danger">
@@ -257,32 +254,33 @@ onMounted(loadUser);
         >
             <!-- Left column: read-only summary -->
             <section
-                class="flex flex-col items-center rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center"
+                class="flex flex-col items-center rounded-3xl border-2 border-back-secondary bg-back-secondary/40 p-8 text-center"
                 aria-label="Account summary"
             >
                 <div
-                    class="flex h-24 w-24 items-center justify-center rounded-full border border-lime-400/40 bg-lime-400/10 text-3xl font-bold tracking-wide text-lime-400"
+                    class="flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-back-secondary to-brand-green text-3xl font-bold tracking-wide text-slate-100 shadow-inner"
                     aria-hidden="true"
                 >
                     {{ initials }}
                 </div>
 
-                <h2 class="mt-5 max-w-full truncate text-xl font-semibold">
+                <h2 class="mt-5 max-w-full truncate text-xl font-bold text-slate-100">
                     {{ user.name }}
                 </h2>
-                <p class="mt-1 max-w-full truncate text-sm text-muted">
+                <p class="mt-1 max-w-full truncate text-sm text-slate-400">
                     {{ user.email }}
                 </p>
 
                 <dl
-                    class="mt-6 w-full rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-4 text-left"
+                    class="mt-6 w-full rounded-2xl border-2 border-back-secondary bg-back-prime/60 px-5 py-4 text-left"
                 >
-                    <dt
-                        class="text-[11px] font-semibold uppercase tracking-wider text-muted"
-                    >
-                        Current Tier
-                    </dt>
-                    <dd class="mt-1 text-lg font-semibold text-lime-400">
+                    <div class="flex items-center justify-between gap-2">
+                        <dt class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                            Current Plan
+                        </dt>
+                        <PlanTag label="ACTIVE" />
+                    </div>
+                    <dd class="mt-1.5 text-lg font-bold text-slate-100">
                         {{ tierLabel }}
                     </dd>
                 </dl>
@@ -299,46 +297,23 @@ onMounted(loadUser);
                         {{ isLoggingOut ? "Logging out..." : "Log out" }}
                     </BaseButton>
 
-                    <!-- Solid inline confirmation dropdown -->
-                    <div
-                        v-if="logoutConfirmOpen"
-                        role="menu"
-                        class="mt-2 w-full rounded-xl border border-white/15 bg-[#0f172a] p-3 text-left shadow-xl"
-                    >
-                        <p class="text-xs font-semibold text-white">
-                            Log out of False Speech?
-                        </p>
-                        <p class="mt-0.5 text-[11px] text-slate-400">
-                            You will need to sign in again to continue.
-                        </p>
-                        <div class="mt-2.5 flex justify-end gap-2">
-                            <button
-                                type="button"
-                                class="rounded-lg border border-white/15 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-slate-700"
-                                @click="logoutConfirmOpen = false"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="button"
-                                class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-500 disabled:opacity-50"
-                                :disabled="isLoggingOut"
-                                @click="logout"
-                            >
-                                {{ isLoggingOut ? "Logging out..." : "Log out" }}
-                            </button>
-                        </div>
-                    </div>
+                    <LogoutConfirmPopover
+                        :open="logoutConfirmOpen"
+                        :busy="isLoggingOut"
+                        position-class="top-full left-0 right-0 mt-2"
+                        @cancel="logoutConfirmOpen = false"
+                        @confirm="logout"
+                    />
                 </div>
             </section>
 
             <!-- Right column: editable form -->
             <section
-                class="rounded-3xl border border-white/10 bg-white/[0.04] p-8"
+                class="rounded-3xl border-2 border-back-secondary bg-back-secondary/40 p-8"
                 aria-label="Edit profile"
             >
-                <h2 class="text-lg font-semibold">Personal Information</h2>
-                <p class="mt-1 text-sm text-muted">
+                <h2 class="text-lg font-bold text-slate-100">Personal Information</h2>
+                <p class="mt-1 text-sm text-slate-400">
                     Update your name and phone number. Your email cannot be
                     changed.
                 </p>
@@ -377,7 +352,7 @@ onMounted(loadUser);
 
                     <p
                         v-if="successMessage"
-                        class="rounded-xl border border-lime-400/30 bg-lime-400/10 px-4 py-3 text-sm font-medium text-lime-400"
+                        class="rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium text-slate-100"
                         role="status"
                     >
                         {{ successMessage }}
@@ -404,8 +379,8 @@ onMounted(loadUser);
 
                 <!-- Change Password (RF-02) -->
                 <div class="mt-10 border-t border-white/10 pt-8">
-                    <h2 class="text-lg font-semibold">Change Password</h2>
-                    <p class="mt-1 text-sm text-muted">
+                    <h2 class="text-lg font-bold text-slate-100">Change Password</h2>
+                    <p class="mt-1 text-sm text-slate-400">
                         Update your account password. Must be at least 8 characters.
                     </p>
 
@@ -443,7 +418,7 @@ onMounted(loadUser);
 
                         <p
                             v-if="pwSuccessMessage"
-                            class="rounded-xl border border-lime-400/30 bg-lime-400/10 px-4 py-3 text-sm font-medium text-lime-400"
+                            class="rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium text-slate-100"
                             role="status"
                         >
                             {{ pwSuccessMessage }}

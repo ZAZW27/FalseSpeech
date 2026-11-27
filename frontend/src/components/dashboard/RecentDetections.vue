@@ -32,7 +32,7 @@ const columns = 'grid grid-cols-[1.5fr_0.8fr_1.3fr_1.4fr] items-center gap-4'
 </script>
 
 <template>
-  <section class="rounded-3xl border border-back-secondary bg-back-secondary/40 py-6">
+  <section class="rounded-3xl border-2 border-back-secondary bg-back-secondary/40 py-6">
     <header class="flex items-center justify-between px-6">
       <h2 class="text-lg font-bold">Recent detections</h2>
       <RouterLink to="/history" class="flex items-center gap-1 text-sm font-semibold text-secondary hover:underline">

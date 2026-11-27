@@ -28,7 +28,7 @@ const cards = computed(() => {
     },
     {
       id: 'checks',
-      icon: 'trend',
+      icon: 'pen',
       tone: 'cyan',
       label: 'Total checks',
       value: props.total,
@@ -37,7 +37,7 @@ const cards = computed(() => {
     },
     {
       id: 'ai',
-      icon: 'alert',
+      icon: 'flag',
       tone: 'danger',
       label: 'AI voices flagged',
       value: props.ai,

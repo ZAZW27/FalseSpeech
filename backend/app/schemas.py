@@ -116,20 +116,54 @@ class Invoice(BaseModel):
     payment_url: Optional[str] = None
 
 # Loggings
-class DetectionSession(BaseModel): 
+class CreateSessionReq(BaseModel):
+    title: Optional[str] = Field(default=None, max_length=160)
+    source: str = Field(default="web", max_length=32)
+
+
+class UpdateSessionReq(BaseModel):
+    title: Optional[str] = Field(default=None, max_length=160)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+
+
+class DetectionSession(BaseModel):
     session_id: str
     started_at: datetime
+    ended_at: Optional[datetime] = None
     duration: float
     fake_ratio: float
     verdict: str
-    
-class DetectionSegment(BaseModel): 
-    offset: float # seconds
+    title: Optional[str] = None
+    notes: Optional[str] = None
+    source: str = "web"
+    fake_count: int = 0
+    real_count: int = 0
+    total_chunks: int = 0
+    max_fake_prob: float = 0.0
+
+
+class DetectionSegment(BaseModel):
+    id: Optional[int] = None
+    offset: float  # chunk index / offset
+    duration_s: float = 0.0
     is_fake: bool
     fake_prob: float
+    real_prob: float = 0.0
+    recorded_at: Optional[datetime] = None
 
-class DetectionSessionDetail(BaseModel): 
+
+class DetectionSessionDetail(BaseModel):
     session_id: str
+    title: Optional[str] = None
+    notes: Optional[str] = None
+    source: str = "web"
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    duration: float = 0.0
+    fake_ratio: float = 0.0
+    verdict: str = "real"
+    fake_count: int = 0
+    real_count: int = 0
     segments: List[DetectionSegment]
 
 # Websockets

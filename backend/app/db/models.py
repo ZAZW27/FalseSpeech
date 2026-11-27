@@ -50,6 +50,9 @@ class DetectionSessionRow(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+    title = Column(String(160), nullable=True)
+    notes = Column(Text, nullable=True)
+    source = Column(String(32), nullable=False, default="web", server_default="web")
     started_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     ended_at = Column(DateTime(timezone=True), nullable=True)
     duration_s = Column(Integer, nullable=False, default=0)
@@ -70,9 +73,11 @@ class DetectionSegmentRow(Base):
         nullable=False,
     )
     offset_s = Column(Integer, nullable=False, default=0)
+    duration_s = Column(Float, nullable=False, default=0.0, server_default="0")
     is_fake = Column(Boolean, nullable=False, default=False)
     fake_prob = Column(Float, nullable=False, default=0.0)
     real_prob = Column(Float, nullable=False, default=0.0)
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class TransactionRow(Base):
