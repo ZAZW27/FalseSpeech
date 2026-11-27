@@ -4,6 +4,7 @@ import { formatDateTime, formatSessionDuration, ratioToPercent } from '@/assets/
 import { getVerdictMeta } from '@/assets/js/historyStats'
 import ConfidenceBar from '@/components/ui/charts/ConfidenceBar.vue'
 import StatusChip from '@/components/ui/badges/StatusChip.vue'
+import SessionRiskTimeline from '@/components/history/SessionRiskTimeline.vue'
 
 const props = defineProps({
   session: { type: Object, required: true },
@@ -21,6 +22,12 @@ const savingMeta = ref(false)
 const confirmDelete = ref(false)
 const copied = ref(false)
 const chunkFilter = ref('all') // 'all' | 'fake' | 'real'
+const selectedChunkId = ref(null)
+
+const selectChunkFromTimeline = (chunkKey) => {
+  selectedChunkId.value = selectedChunkId.value === chunkKey ? null : chunkKey
+  if (chunkFilter.value !== 'all') chunkFilter.value = 'all'
+}
 
 const meta = computed(() => getVerdictMeta(props.session.verdict))
 const fakePercent = computed(() => ratioToPercent(props.session.fake_ratio))
@@ -306,8 +313,16 @@ const formatChunkTime = (iso) => {
             </div>
           </div>
 
+          <!-- Session Risk Timeline Chart -->
+          <SessionRiskTimeline
+            v-if="!loadingSegments && segments && segments.length"
+            :segments="segments"
+            :selected-chunk-id="selectedChunkId"
+            @select-chunk="selectChunkFromTimeline"
+          />
+
           <!-- Chunks Section Header + Filter -->
-          <div class="mt-3.5 flex flex-wrap items-center justify-between gap-2">
+          <div class="mt-4 flex flex-wrap items-center justify-between gap-2">
             <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
               Recorded Audio Chunks ({{ filteredSegments.length }})
             </p>
@@ -360,7 +375,11 @@ const formatChunkTime = (iso) => {
                 <tr
                   v-for="seg in filteredSegments"
                   :key="seg.id ?? seg.offset"
-                  class="border-b border-white/5 transition last:border-b-0 hover:bg-white/[0.03]"
+                  :class="[
+                    'border-b border-white/5 transition last:border-b-0 hover:bg-white/[0.04]',
+                    selectedChunkId === (seg.id ?? seg.offset) ? 'bg-white/[0.08]' : '',
+                  ]"
+                  @click="selectedChunkId = seg.id ?? seg.offset"
                 >
                   <td class="px-4 py-2.5 tabular-nums text-slate-300">#{{ seg.offset }}</td>
                   <td class="px-4 py-2.5 tabular-nums text-slate-300">{{ formatChunkTime(seg.recorded_at) }}</td>

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { authFetch } from '@/assets/js/api'
 import { summarizeHistory } from '@/assets/js/historyStats'
 import { useAudioCapture } from '@/assets/js/useAudioCapture'
+import { useSpikeAlert } from '@/assets/js/useSpikeAlert'
 import PlayButton from '@/components/ui/buttons/PlayButton.vue'
 import CaptureControls from '@/components/dashboard/CaptureControls.vue'
 import VolumeMeter from '@/components/dashboard/VolumeMeter.vue'
@@ -49,6 +50,15 @@ const {
   onQuota: props.updateQuota,
   onSessionExpired: () => router.replace('/login'),
 })
+
+const {
+  isSupported: alertsSupported,
+  alertsEnabled,
+  alertNotice,
+  toggleAlerts,
+  recordVerdict,
+  resetStreak,
+} = useSpikeAlert()
 
 const probeOpen = ref(false)
 const inputSourceTab = ref(
@@ -152,7 +162,12 @@ const buttonText = computed(() => (isListening.value ? 'Stop listening' : 'Start
 
 // A finished session is saved on the server, so reload the saved history when it stops.
 watch(isListening, (now, before) => {
+  if (!now) resetStreak()
   if (before && !now) loadSavedHistory()
+})
+
+watch(currentResult, (res) => {
+  if (isListening.value && res) recordVerdict(res)
 })
 
 onMounted(() => {
@@ -301,14 +316,36 @@ onMounted(() => {
           data-tour="verdict-panel"
           class="relative flex flex-1 flex-col justify-center rounded-3xl border-2 border-back-secondary bg-gradient-to-br from-back-secondary to-back-prime px-6 py-8 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
         >
-          <button
-            data-tour="terminal-toggle"
-            type="button"
-            class="absolute right-4 top-4 rounded-lg border border-white/15 bg-back-prime/70 px-2.5 py-1 font-mono text-[11px] font-semibold text-secondary/80 transition hover:border-brand-green/60 hover:text-brand-green"
-            @click="toggleTerminal"
-          >
-            {{ showTerminal ? 'Hide Terminal' : 'Show Terminal' }}
-          </button>
+          <div class="absolute right-4 top-4 flex items-center gap-2">
+            <button
+              v-if="alertsSupported"
+              type="button"
+              :title="alertsEnabled ? 'Desktop alert enabled (fires after 2 consecutive AI spikes)' : 'Enable desktop alerts when AI voice is detected in background'"
+              :class="[
+                'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition',
+                alertsEnabled
+                  ? 'border-brand-green/50 bg-brand-green/15 text-slate-100 hover:bg-brand-green/25'
+                  : 'border-white/15 bg-back-prime/70 text-slate-300 hover:border-white/35 hover:text-slate-100',
+              ]"
+              @click="toggleAlerts"
+            >
+              <span :class="['size-1.5 rounded-full', alertsEnabled ? 'bg-brand-green' : 'bg-slate-500']" />
+              <span>{{ alertsEnabled ? 'Alerts: ON' : 'Alerts: OFF' }}</span>
+            </button>
+
+            <button
+              data-tour="terminal-toggle"
+              type="button"
+              class="rounded-lg border border-white/15 bg-back-prime/70 px-2.5 py-1 font-mono text-[11px] font-semibold text-secondary/80 transition hover:border-brand-green/60 hover:text-brand-green"
+              @click="toggleTerminal"
+            >
+              {{ showTerminal ? 'Hide Terminal' : 'Show Terminal' }}
+            </button>
+          </div>
+
+          <p v-if="alertNotice" class="mb-2 text-center text-[11px] text-amber-300" role="status">
+            {{ alertNotice }}
+          </p>
 
           <VerdictDisplay
             :result="displayedResult"
