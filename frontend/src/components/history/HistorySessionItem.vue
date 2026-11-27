@@ -61,7 +61,18 @@ const meta = computed(() => getVerdictMeta(props.session.verdict))
 const fakePercent = computed(() => ratioToPercent(props.session.fake_ratio))
 const peakPercent = computed(() => ratioToPercent(props.session.max_fake_prob ?? props.session.fake_ratio))
 const displayTitle = computed(() => (props.session.title || '').trim() || `Session #${props.session.session_id}`)
+const isLongTitle = computed(() => displayTitle.value.length > 36)
 const dateLabel = computed(() => formatDateTime(props.session.started_at))
+
+// Left-to-right linear progress border around the AI / Human verdict pill
+const verdictBorderStyle = computed(() => {
+  const isDanger = meta.value.tone === 'danger'
+  const pct = isDanger ? Math.min(100, Math.max(0, fakePercent.value)) : Math.min(100, Math.max(0, 100 - fakePercent.value))
+  const color = isDanger ? '#ff96a1' : '#B7D894'
+  return {
+    background: `linear-gradient(to right, ${color} ${pct}%, rgba(255, 255, 255, 0.18) ${pct}%)`,
+  }
+})
 const durationLabel = computed(() => formatSessionDuration(props.session.duration))
 const sourceLabel = computed(() => String(props.session.source || 'web').toUpperCase())
 
@@ -148,26 +159,38 @@ const formatChunkTime = (iso) => {
   >
     <!-- Session Summary Header (click to expand/collapse chunks dropdown) -->
     <div
-      class="flex w-full cursor-pointer flex-col gap-3 px-5 py-4 text-left transition hover:bg-white/[0.02] lg:flex-row lg:items-center lg:justify-between"
+      class="flex w-full cursor-pointer flex-col gap-3 px-5 py-4 text-left transition hover:bg-white/[0.02] lg:flex-row lg:items-center lg:justify-between lg:gap-5"
       role="button"
       tabindex="0"
       :aria-expanded="expanded"
       @click="$emit('toggle', session.session_id)"
       @keydown.enter.prevent="$emit('toggle', session.session_id)"
     >
-      <div class="flex min-w-0 items-start gap-3.5 lg:items-center">
-        <!-- Session Checklist Checkbox -->
+      <div class="flex min-w-0 flex-1 items-start gap-3.5 lg:items-center">
+        <!-- Custom Dark-Theme Session Checkbox -->
         <label
-          class="mt-1 flex shrink-0 cursor-pointer items-center lg:mt-0"
+          class="relative mt-1 flex shrink-0 cursor-pointer items-center lg:mt-0"
           :aria-label="`Select ${displayTitle}`"
           @click.stop
         >
           <input
             type="checkbox"
             :checked="selected"
-            class="size-4 cursor-pointer rounded border-white/30 bg-back-prime accent-brand-green"
+            class="peer size-4 cursor-pointer appearance-none rounded border-2 border-white/35 bg-back-prime transition hover:border-white/60 checked:border-brand-green checked:bg-brand-green"
             @change="$emit('toggle-select', session.session_id)"
           />
+          <svg
+            viewBox="0 0 12 12"
+            class="pointer-events-none absolute left-0.5 top-0.5 size-3 text-back-prime opacity-0 transition peer-checked:opacity-100"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M2.5 6.5L5 9L9.5 3.5" />
+          </svg>
         </label>
 
         <span
@@ -187,9 +210,9 @@ const formatChunkTime = (iso) => {
         </span>
 
         <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-center gap-2">
-            <h3 class="truncate text-sm font-bold text-white sm:text-base">{{ displayTitle }}</h3>
-            <span class="rounded-md bg-white/10 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-slate-300">
+          <!-- Badges cleanly on top of the session name -->
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-slate-300">
               #{{ session.session_id }}
             </span>
             <span
@@ -199,10 +222,23 @@ const formatChunkTime = (iso) => {
             </span>
             <span
               v-if="session.notes"
-              class="rounded-md border border-white/15 bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold text-white"
+              class="rounded-md border border-white/15 bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold text-slate-100"
             >
               HR Note
             </span>
+          </div>
+
+          <!-- Clean truncated title with full-name hover tooltip (no marquee) -->
+          <div class="group/title relative mt-1 min-w-0">
+            <h3 :title="displayTitle" class="truncate text-sm font-bold text-slate-100 sm:text-base">
+              {{ displayTitle }}
+            </h3>
+            <div
+              v-if="isLongTitle"
+              class="pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden max-w-[460px] rounded-xl border border-white/20 bg-back-prime px-3 py-1.5 text-xs font-semibold text-slate-100 shadow-xl group-hover/title:block"
+            >
+              {{ displayTitle }}
+            </div>
           </div>
 
           <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
@@ -210,7 +246,7 @@ const formatChunkTime = (iso) => {
             <span aria-hidden="true">&bull;</span>
             <span class="tabular-nums">{{ durationLabel }}</span>
             <span aria-hidden="true">&bull;</span>
-            <span class="tabular-nums font-medium text-white">
+            <span class="tabular-nums font-medium text-slate-100">
               {{ session.total_chunks }} chunk{{ session.total_chunks === 1 ? '' : 's' }}
               <span class="font-normal text-slate-400">
                 ({{ session.fake_count }} AI / {{ session.real_count }} Human)
@@ -220,18 +256,21 @@ const formatChunkTime = (iso) => {
         </div>
       </div>
 
-      <div class="flex flex-wrap items-center justify-between gap-4 pl-11 lg:justify-end lg:pl-0">
-        <div class="flex items-center gap-2.5">
-          <div class="w-24">
-            <ConfidenceBar :value="fakePercent" :tone="meta.tone" height-class="h-1.5" />
-          </div>
-          <div class="text-right">
-            <p class="text-xs font-bold tabular-nums text-white">{{ fakePercent }}% AI</p>
-            <p class="text-[10px] tabular-nums text-slate-400">Peak {{ peakPercent }}%</p>
-          </div>
+      <!-- Stacked % readout + Verdict pill whose 2px border fills left-to-right -->
+      <div class="flex shrink-0 flex-col items-end gap-1.5 pl-11 lg:pl-0">
+        <div class="text-right tabular-nums leading-tight">
+          <p class="text-xs font-bold text-slate-100">{{ fakePercent }}% AI</p>
+          <p class="text-[10px] text-slate-400">Peak {{ peakPercent }}%</p>
         </div>
 
-        <StatusChip :label="meta.label" :tone="meta.tone" />
+        <span class="inline-flex rounded-full p-[2px]" :style="verdictBorderStyle">
+          <span
+            class="inline-flex items-center gap-2 whitespace-nowrap rounded-full bg-back-prime px-3 py-1 text-xs font-semibold text-slate-100"
+          >
+            <span :class="['size-1.5 rounded-full', meta.tone === 'danger' ? 'bg-red-400' : 'bg-brand-green']" />
+            {{ meta.label }}
+          </span>
+        </span>
       </div>
     </div>
 

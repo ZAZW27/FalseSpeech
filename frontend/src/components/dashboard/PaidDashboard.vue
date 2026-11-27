@@ -208,7 +208,7 @@ onMounted(() => {
       <section class="flex flex-col gap-5 rounded-3xl border-2 border-back-secondary bg-back-secondary/40 p-6 xl:col-span-5">
         <!-- Top-left Live / Recorded mode switch with sliding indicator icons -->
         <div class="flex items-center justify-between gap-2">
-          <div class="inline-flex rounded-xl border border-white/15 bg-back-prime/80 p-1 text-xs">
+          <div data-tour="source-toggle" class="inline-flex rounded-xl border border-white/15 bg-back-prime/80 p-1 text-xs">
             <button
               type="button"
               :disabled="isListening"
@@ -319,6 +319,7 @@ onMounted(() => {
           <div class="absolute right-4 top-4 flex items-center gap-2">
             <button
               v-if="alertsSupported"
+              data-tour="alerts-toggle"
               type="button"
               :title="alertsEnabled ? 'Desktop alert enabled (fires after 2 consecutive AI spikes)' : 'Enable desktop alerts when AI voice is detected in background'"
               :class="[
