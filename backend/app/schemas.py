@@ -23,6 +23,7 @@ class RegisterRes(BaseModel):
 class LoginReq(BaseModel):
     email_or_phone: str
     password: str
+    client_platform: str = "web"
 
     @field_validator('email_or_phone')
     @classmethod
@@ -45,6 +46,7 @@ class UserPub(BaseModel):
     email: str
     phone: str
     tier: str
+    balance: int = 0
     quota_used: int
     quota_limit: int
     quota_reset_at: Optional[datetime] = None
@@ -78,20 +80,29 @@ class Tier(BaseModel):
 
 class UpgradeReq(BaseModel):  # upgrade
     target_tier: str
+    payment_method: str = "midtrans"  # "midtrans" | "balance" | "hybrid"
 
 class UpgradeRes(BaseModel):
-    payment_url: str
+    payment_url: Optional[str] = None
+    paid_with_balance: bool = False
+    plan_credit_idr: int = 0
+    balance_used_idr: int = 0
+    remaining_midtrans_idr: int = 0
+    new_balance: Optional[int] = None
+    order_id: Optional[str] = None
     
 class DowngradeReq(BaseModel): # Downgrade 
     target_tier: str
     
-class DowngradeRes(BaseModel): 
+class DowngradeRes(BaseModel):
     success: bool
     effective_at: datetime
     previous_tier: str
     new_tier: str
     new_quota_limit: int
     adjustment_cost_idr: int = 0
+    compensation_idr: int = 0
+    new_balance: int = 0
 
 # Billings
 class Invoice(BaseModel): 
@@ -102,6 +113,7 @@ class Invoice(BaseModel):
     issued_at: datetime
     paid_at: Optional[datetime] = None
     tier: str
+    payment_url: Optional[str] = None
 
 # Loggings
 class DetectionSession(BaseModel): 

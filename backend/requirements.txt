@@ -15,3 +15,5 @@ bcrypt==4.0.1
 midtransclient==1.4.2
 slowapi==0.1.10
 fastapi-mail==1.4.1
+transformers==4.49.0
+fpdf2==2.8.2

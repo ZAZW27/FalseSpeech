@@ -23,7 +23,7 @@ const cardPositions = [
 <template>
     <section
         id="home"
-        class="snap-start relative min-h-svh lg:pt-24 isolate overflow-hidden bg-gradient-to-br from-[#16181c] via-[#1d2739] to-[#36415A]"
+        class="snap-start relative flex min-h-[100svh] flex-col justify-center lg:pt-20 isolate overflow-hidden bg-gradient-to-br from-[#16181c] via-[#1d2739] to-[#36415A]"
     >
         <span
             class="pointer-events-none absolute md:-left-67 md:-top-67 -left-40 -top-40 -z-10 size-[320px] rounded-full bg-[#2f394a87] blur-[120px] lg:size-[620px]"
@@ -39,7 +39,7 @@ const cardPositions = [
         </span>
 
         <div
-            class="relative mx-auto flex w-full max-w-480 flex-col px-6 pb-16 pt-[104px] lg:min-h-[900px] lg:px-12 lg:pt-[200px] xl:px-20"
+            class="relative mx-auto flex w-full max-w-480 flex-col px-6 py-24 lg:px-12 lg:py-28 xl:px-20"
         >
             <div class="max-w-[660px]">
                 <LiveBadge :label="hero.badge" />

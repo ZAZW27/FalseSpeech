@@ -7,7 +7,7 @@ import FeatureCard from "@/components/ui/cards/FeatureCard.vue";
 <template>
     <section
         id="about"
-        class="relative snap-start overflow-hidden bg-[#1d2739] min-h-svh py-16 md:py-24 lg:py-64"
+        class="relative snap-start flex min-h-[100svh] flex-col justify-center overflow-hidden bg-[#1d2739] py-16 md:py-20 lg:py-24"
     >
         <div
             class="pointer-events-none absolute inset-0 bg-[linear-gradient(-30deg,transparent_5%,rgba(220,200,250,0.15)_50%,transparent_95%)]"

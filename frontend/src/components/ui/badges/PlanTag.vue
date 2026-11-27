@@ -6,7 +6,7 @@ defineProps({
 
 <template>
     <span
-        class="inline-flex items-center rounded-full bg-lime-400 px-2.5 py-1 text-[11px] font-bold leading-none text-back-prime"
+        class="inline-flex items-center rounded-full border border-brand-green/50 bg-[#2f6b5e] px-2.5 py-1 text-[11px] font-bold leading-none text-white"
     >
         {{ label }}
     </span>

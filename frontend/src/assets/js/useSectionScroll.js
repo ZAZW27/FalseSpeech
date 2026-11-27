@@ -2,9 +2,10 @@ import { onMounted, onUnmounted } from "vue";
 
 export function useSectionScroll(
     selector = "section[id]",
-    { duration = 700, minWidth = 1024, offset = 0, cooldown = 150 } = {}
+    { duration = 650, minWidth = 768, offset = 0, cooldown = 120 } = {}
 ) {
-    const EPS = 2;
+    // 16px tolerance handles sub-pixel rounding across 80% / 100% / 125% / 150% browser zooms
+    const EPS = 16;
     let locked = false;
     let rafId = null;
 

@@ -35,11 +35,10 @@ COPY . .
 RUN chown -R appuser:appuser /home/appuser/app
 USER appuser
 
-# Pre-download the Wav2Vec2-Small AntiDeepfake model from Hugging Face
-# This bakes the model into the Docker image for faster cold starts
+# Pre-download the Wav2Vec2-Large AntiDeepfake model from Hugging Face
 RUN python -c "from huggingface_hub import hf_hub_download; \
-hf_hub_download('nii-yamagishilab/wav2vec-small-anti-deepfake', 'model.safetensors'); \
-hf_hub_download('nii-yamagishilab/wav2vec-small-anti-deepfake', 'config.json')"
+hf_hub_download('nii-yamagishilab/wav2vec-large-anti-deepfake', 'model.safetensors'); \
+hf_hub_download('nii-yamagishilab/wav2vec-large-anti-deepfake', 'config.json')"
 
 # Expose the port your app will run on (adjust if needed, e.g., 8000 for FastAPI)
 EXPOSE 7860
