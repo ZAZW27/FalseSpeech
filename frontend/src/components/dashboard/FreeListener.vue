@@ -6,6 +6,7 @@ import PlayButton from '@/components/ui/buttons/PlayButton.vue'
 import CaptureControls from '@/components/dashboard/CaptureControls.vue'
 import VerdictDisplay from '@/components/dashboard/VerdictDisplay.vue'
 import AudioProbeModal from '@/components/ui/modals/AudioProbeModal.vue'
+import DashboardTutorial from '@/components/dashboard/DashboardTutorial.vue'
 
 // Scenario A: free users get the controls, the play button and the verdict only.
 const props = defineProps({
@@ -39,8 +40,10 @@ const {
 const probeOpen = ref(false)
 const onAudioDetected = ({ bestDeviceId, activeDeviceIds }) => {
   markVerifiedDevices(activeDeviceIds)
-  mode.value = 'monitor'
-  selectedDevice.value = bestDeviceId
+  if (bestDeviceId) {
+    mode.value = 'monitor'
+    selectedDevice.value = bestDeviceId
+  }
 }
 
 const toggle = () => (isListening.value ? stopCapture() : startCapture())
@@ -55,21 +58,25 @@ onMounted(() => {
 
 <template>
   <div class="mx-auto flex max-w-[620px] flex-col items-center gap-10 py-6">
-    <PlayButton
-      size="xl"
-      :playing="isListening"
-      :pulse="isListening"
-      :label="isListening ? 'Stop listening' : 'Start listening'"
-      @click="toggle"
-    />
+    <div data-tour="play-control">
+      <PlayButton
+        size="xl"
+        :playing="isListening"
+        :pulse="isListening"
+        :label="isListening ? 'Stop listening' : 'Start listening'"
+        @click="toggle"
+      />
+    </div>
 
-    <VerdictDisplay
-      :result="currentResult"
-      :listening="isListening"
-      :status-text="statusText"
-      :status-warn="statusWarn"
-      size="xl"
-    />
+    <div data-tour="verdict-panel">
+      <VerdictDisplay
+        :result="currentResult"
+        :listening="isListening"
+        :status-text="statusText"
+        :status-warn="statusWarn"
+        size="xl"
+      />
+    </div>
 
     <p
       v-if="errorMessage"
@@ -81,8 +88,9 @@ onMounted(() => {
 
     <section class="w-full rounded-3xl border-2 border-back-secondary bg-back-secondary/40 p-6">
       <div class="mb-4 flex items-center justify-between gap-2">
-        <span class="text-xs font-semibold uppercase tracking-wider text-secondary/70">Audio Setup</span>
+        <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Audio Setup</span>
         <button
+          data-tour="auto-detect"
           type="button"
           :disabled="isListening"
           class="rounded-lg border border-brand-green/50 bg-[#2f6b5e]/80 px-2.5 py-1 text-[11px] font-bold text-white transition hover:bg-[#2f6b5e] disabled:opacity-40"
@@ -91,14 +99,16 @@ onMounted(() => {
           Auto-Detect
         </button>
       </div>
-      <CaptureControls
-        v-model:mode="mode"
-        v-model:selected-device="selectedDevice"
-        v-model:chunk-size="chunkSize"
-        :devices="devices"
-        :verified-devices="verifiedDevices"
-        :locked="isListening"
-      />
+      <div data-tour="capture-controls">
+        <CaptureControls
+          v-model:mode="mode"
+          v-model:selected-device="selectedDevice"
+          v-model:chunk-size="chunkSize"
+          :devices="devices"
+          :verified-devices="verifiedDevices"
+          :locked="isListening"
+        />
+      </div>
     </section>
 
     <AudioProbeModal
@@ -108,5 +118,7 @@ onMounted(() => {
       @detected="onAudioDetected"
       @switch-tab-mode="mode = 'tab'"
     />
+
+    <DashboardTutorial />
   </div>
 </template>
