@@ -95,6 +95,7 @@ def _otp_expired(user: User) -> bool:
 
 # Health -----------------------------------------------
 @router.get("/", response_model=HealthCheck, tags=["health"])
+@router.get("/health", response_model=HealthCheck, tags=["health"])
 def health():
     _, device_used = inference.get_model()
     return HealthCheck(

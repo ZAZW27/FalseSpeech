@@ -35,10 +35,11 @@ COPY . .
 RUN chown -R appuser:appuser /home/appuser/app
 USER appuser
 
-# Pre-download the Wav2Vec2-Large AntiDeepfake model from Hugging Face
+# Pre-download the Wav2Vec2-Large AntiDeepfake model and Silero VAD so cold starts never block
 RUN python -c "from huggingface_hub import hf_hub_download; \
 hf_hub_download('nii-yamagishilab/wav2vec-large-anti-deepfake', 'model.safetensors'); \
-hf_hub_download('nii-yamagishilab/wav2vec-large-anti-deepfake', 'config.json')"
+hf_hub_download('nii-yamagishilab/wav2vec-large-anti-deepfake', 'config.json')" && \
+    python -c "import torch; torch.hub.load('snakers4/silero-vad', 'silero_vad', trust_repo=True)"
 
 # Expose the port your app will run on (adjust if needed, e.g., 8000 for FastAPI)
 EXPOSE 7860
