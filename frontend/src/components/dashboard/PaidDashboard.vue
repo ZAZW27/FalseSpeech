@@ -13,6 +13,7 @@ import StatsRow from '@/components/dashboard/StatsRow.vue'
 import ActivityChart from '@/components/dashboard/ActivityChart.vue'
 import LiveHistoryTable from '@/components/dashboard/LiveHistoryTable.vue'
 import AudioProbeModal from '@/components/ui/modals/AudioProbeModal.vue'
+import DashboardTutorial from '@/components/dashboard/DashboardTutorial.vue'
 
 // Scenario B: paid users get everything. user comes from AppLayout (GET /api/users/me).
 const props = defineProps({
@@ -132,12 +133,13 @@ onMounted(() => {
     <!-- Top row: controls on the left, result and developer log on the right -->
     <div class="grid gap-5 xl:grid-cols-12">
       <section class="flex flex-col gap-6 rounded-3xl border-2 border-back-secondary bg-back-secondary/40 p-6 xl:col-span-5">
-        <div class="flex items-center gap-5">
+        <div data-tour="play-control" class="flex items-center gap-5">
           <PlayButton size="sm" :playing="isListening" :pulse="isListening" :label="buttonText" @click="toggle" />
           <div class="min-w-0 flex-1">
             <div class="flex items-center justify-between gap-2">
               <p class="text-sm font-semibold">{{ buttonText }}</p>
               <button
+                data-tour="auto-detect"
                 type="button"
                 :disabled="isListening"
                 class="rounded-lg border border-brand-green/50 bg-[#2f6b5e]/80 px-2.5 py-1 text-[11px] font-bold text-white transition hover:bg-[#2f6b5e] disabled:opacity-40"
@@ -150,14 +152,16 @@ onMounted(() => {
           </div>
         </div>
 
-        <CaptureControls
-          v-model:mode="mode"
-          v-model:selected-device="selectedDevice"
-          v-model:chunk-size="chunkSize"
-          :devices="devices"
-          :verified-devices="verifiedDevices"
-          :locked="isListening"
-        />
+        <div data-tour="capture-controls">
+          <CaptureControls
+            v-model:mode="mode"
+            v-model:selected-device="selectedDevice"
+            v-model:chunk-size="chunkSize"
+            :devices="devices"
+            :verified-devices="verifiedDevices"
+            :locked="isListening"
+          />
+        </div>
 
         <AudioProbeModal
           v-model="probeOpen"
@@ -170,9 +174,11 @@ onMounted(() => {
 
       <div class="flex flex-col xl:col-span-7">
         <section
+          data-tour="verdict-panel"
           class="relative flex flex-1 flex-col justify-center rounded-3xl border-2 border-back-secondary bg-gradient-to-br from-back-secondary to-back-prime px-6 py-8 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
         >
           <button
+            data-tour="terminal-toggle"
             type="button"
             class="absolute right-4 top-4 rounded-lg border border-white/15 bg-back-prime/70 px-2.5 py-1 font-mono text-[11px] font-semibold text-secondary/80 transition hover:border-brand-green/60 hover:text-brand-green"
             @click="toggleTerminal"
@@ -205,18 +211,22 @@ onMounted(() => {
     </div>
 
     <!-- Middle row -->
-    <StatsRow
-      :used-seconds="user.quota_used"
-      :limit-seconds="user.quota_limit"
-      :total="summary.total"
-      :ai="summary.ai"
-      :human="summary.human"
-    />
+    <div data-tour="stats-row">
+      <StatsRow
+        :used-seconds="user.quota_used"
+        :limit-seconds="user.quota_limit"
+        :total="summary.total"
+        :ai="summary.ai"
+        :human="summary.human"
+      />
+    </div>
 
     <!-- Bottom row -->
     <div class="grid gap-5 xl:grid-cols-3">
       <ActivityChart class="xl:col-span-1" :history="savedHistory" />
       <LiveHistoryTable class="xl:col-span-2" :rows="liveHistory" />
     </div>
+
+    <DashboardTutorial />
   </div>
 </template>
