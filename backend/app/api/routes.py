@@ -37,6 +37,13 @@ from app.security.passwords import hash_pass, verify_pass
 from app.service import auth, inference
 from app.service.audio import preprocess_audio
 from app.service.diarization import diarize_audio_tensor
+from app.service.report_verify import (
+    build_hr_risk_brief,
+    compute_integrity_hash,
+    create_batch_share_token,
+    create_share_token,
+    verify_share_token,
+)
 from app.service.conn_manager import manager
 from app.service.email_service import send_otp_email, send_invoice_email
 from app.service.history_export import (
@@ -1245,6 +1252,7 @@ def detection_history(
 def export_detection_history(
     format: str = "csv",
     session_id: str | None = None,
+    session_ids: str | None = None,
     verdict: str | None = None,
     search: str | None = None,
     start_date: str | None = None,
@@ -1257,7 +1265,21 @@ def export_detection_history(
     if fmt not in ("csv", "pdf", "txt", "json", "md"):
         raise HTTPException(status_code=400, detail="Unsupported export format. Use csv, pdf, txt, md, or json.")
 
-    if session_id:
+    if session_ids and session_ids.strip():
+        parsed_ids = []
+        for tok in session_ids.split(","):
+            tok = tok.strip()
+            if tok.isdigit():
+                parsed_ids.append(int(tok))
+        if not parsed_ids:
+            raise HTTPException(status_code=400, detail="No valid session_ids provided.")
+        rows = (
+            db.query(DetectionSessionRow)
+            .filter(DetectionSessionRow.user_id == user.id, DetectionSessionRow.id.in_(parsed_ids))
+            .order_by(DetectionSessionRow.id.desc())
+            .all()
+        )
+    elif session_id:
         try:
             sid = int(session_id)
         except ValueError:
@@ -1293,7 +1315,13 @@ def export_detection_history(
         items.append((r, segs))
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
-    suffix = f"session-{session_id}" if session_id else f"report-{stamp}"
+    suffix = (
+        f"selected-{len(rows)}"
+        if session_ids
+        else f"session-{session_id}"
+        if session_id
+        else f"report-{stamp}"
+    )
 
     if fmt == "csv":
         content = export_history_csv(items, user.name, user.email)
@@ -1432,6 +1460,159 @@ def delete_detection_session(
     db.delete(row)
     db.commit()
     return None
+
+
+@router.post("/api/history/{session_id}/share", tags=["history"])
+def create_session_share_link(
+    session_id: str,
+    user: User = Depends(get_curr_user),
+    db: Session = Depends(get_db),
+):
+    """Generates a 30-day HMAC-SHA256 signed read-only share link and SHA-256 integrity digest."""
+    try:
+        sid = int(session_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Session tidak ditemukan")
+
+    row = (
+        db.query(DetectionSessionRow)
+        .filter(DetectionSessionRow.id == sid, DetectionSessionRow.user_id == user.id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Session tidak ditemukan")
+
+    segs = (
+        db.query(DetectionSegmentRow)
+        .filter(DetectionSegmentRow.session_id == row.id)
+        .order_by(DetectionSegmentRow.offset_s.asc(), DetectionSegmentRow.id.asc())
+        .all()
+    )
+    token = create_share_token(row.id, user.id, expires_days=30)
+    digest = compute_integrity_hash(row, segs)
+    return {
+        "session_id": str(row.id),
+        "share_token": token,
+        "share_path": f"/verify/{token}",
+        "integrity_hash": digest,
+        "expires_in_days": 30,
+    }
+
+
+@router.post("/api/history/share-batch", tags=["history"])
+async def create_batch_session_share_link(
+    request: Request,
+    user: User = Depends(get_curr_user),
+    db: Session = Depends(get_db),
+):
+    """Generates a single 30-day HMAC-SHA256 signed share link covering multiple selected sessions."""
+    body = await request.json()
+    raw_ids = body.get("session_ids") if isinstance(body, dict) else None
+    if not isinstance(raw_ids, list) or not raw_ids:
+        raise HTTPException(status_code=400, detail="Select at least one session to share.")
+
+    parsed_ids = []
+    for x in raw_ids:
+        try:
+            parsed_ids.append(int(x))
+        except (ValueError, TypeError):
+            continue
+
+    rows = (
+        db.query(DetectionSessionRow)
+        .filter(DetectionSessionRow.user_id == user.id, DetectionSessionRow.id.in_(parsed_ids))
+        .order_by(DetectionSessionRow.id.desc())
+        .all()
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="No matching sessions found.")
+
+    valid_ids = [r.id for r in rows]
+    token = create_batch_share_token(valid_ids, user.id, expires_days=30)
+    return {
+        "session_ids": [str(i) for i in valid_ids],
+        "count": len(valid_ids),
+        "share_token": token,
+        "share_path": f"/verify/{token}",
+        "expires_in_days": 30,
+    }
+
+
+@router.get("/api/verify/{share_token}", tags=["history"])
+def verify_shared_report(
+    share_token: str,
+    db: Session = Depends(get_db),
+):
+    """Public read-only verification endpoint for single or multi-session bundles (no login required)."""
+    verified = verify_share_token(share_token)
+    if verified is None:
+        raise HTTPException(status_code=404, detail="Verification link is invalid or has expired.")
+
+    sids, uid = verified
+    rows = (
+        db.query(DetectionSessionRow)
+        .filter(DetectionSessionRow.id.in_(sids), DetectionSessionRow.user_id == uid)
+        .order_by(DetectionSessionRow.id.desc())
+        .all()
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="The shared detection session(s) no longer exist.")
+
+    owner = db.query(User).filter(User.id == uid).first()
+    reviewed_by = owner.name if owner else "False Speech User"
+
+    def _build_entry(row):
+        segs = (
+            db.query(DetectionSegmentRow)
+            .filter(DetectionSegmentRow.session_id == row.id)
+            .order_by(DetectionSegmentRow.offset_s.asc(), DetectionSegmentRow.id.asc())
+            .all()
+        )
+        return {
+            "verified": True,
+            "integrity_hash": compute_integrity_hash(row, segs),
+            "reviewed_by": reviewed_by,
+            "session_id": str(row.id),
+            "title": (row.title or "").strip() or f"Session #{row.id}",
+            "notes": row.notes or "",
+            "source": row.source or "web",
+            "started_at": row.started_at,
+            "ended_at": row.ended_at,
+            "duration": row.duration_s,
+            "fake_ratio": float(row.avg_fake_prob or 0.0),
+            "verdict": row.verdict,
+            "fake_count": int(row.fake_count or 0),
+            "real_count": int(row.real_count or 0),
+            "total_chunks": len(segs),
+            "hr_brief": build_hr_risk_brief(row, segs),
+            "segments": [
+                {
+                    "id": s.id,
+                    "offset": s.offset_s,
+                    "duration_s": float(getattr(s, "duration_s", 0.0) or 0.0),
+                    "is_fake": bool(s.is_fake),
+                    "fake_prob": float(s.fake_prob or 0.0),
+                    "real_prob": float(s.real_prob or 0.0),
+                    "recorded_at": getattr(s, "recorded_at", None) or row.started_at,
+                }
+                for s in segs
+            ],
+        }
+
+    entries = [_build_entry(r) for r in rows]
+    if len(entries) == 1:
+        return {**entries[0], "is_batch": False, "sessions": entries}
+
+    import hashlib
+    bundle_digest = hashlib.sha256(":".join(e["integrity_hash"] for e in entries).encode("ascii")).hexdigest()
+    return {
+        "verified": True,
+        "is_batch": True,
+        "reviewed_by": reviewed_by,
+        "total_sessions": len(entries),
+        "integrity_hash": bundle_digest,
+        "sessions": entries,
+    }
 
 
 # Payment Finalization & Webhook -----------------------------------------------

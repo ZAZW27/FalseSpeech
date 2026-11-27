@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { authFetch } from '@/assets/js/api'
 import { formatDateTime, formatSessionDuration, ratioToPercent } from '@/assets/js/format'
 import { getVerdictMeta } from '@/assets/js/historyStats'
 import ConfidenceBar from '@/components/ui/charts/ConfidenceBar.vue'
@@ -9,11 +10,12 @@ import SessionRiskTimeline from '@/components/history/SessionRiskTimeline.vue'
 const props = defineProps({
   session: { type: Object, required: true },
   expanded: { type: Boolean, default: false },
+  selected: { type: Boolean, default: false },
   segments: { type: Array, default: null }, // null = not yet loaded
   loadingSegments: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['toggle', 'save-meta', 'delete', 'open-export'])
+const emit = defineEmits(['toggle', 'toggle-select', 'save-meta', 'delete', 'open-export'])
 
 const editingMeta = ref(false)
 const draftTitle = ref('')
@@ -21,8 +23,34 @@ const draftNotes = ref('')
 const savingMeta = ref(false)
 const confirmDelete = ref(false)
 const copied = ref(false)
+const sharing = ref(false)
+const shareUrl = ref('')
+const shareCopied = ref(false)
 const chunkFilter = ref('all') // 'all' | 'fake' | 'real'
 const selectedChunkId = ref(null)
+
+const createShareLink = async () => {
+  if (sharing.value) return
+  sharing.value = true
+  try {
+    const res = await authFetch(`/api/history/${encodeURIComponent(props.session.session_id)}/share`, {
+      method: 'POST',
+    })
+    if (!res.ok) throw new Error('Share link failed')
+    const data = await res.json()
+    const fullUrl = `${window.location.origin}${data.share_path}`
+    shareUrl.value = fullUrl
+    try {
+      await navigator.clipboard.writeText(fullUrl)
+      shareCopied.value = true
+      setTimeout(() => {
+        shareCopied.value = false
+      }, 2500)
+    } catch {}
+  } finally {
+    sharing.value = false
+  }
+}
 
 const selectChunkFromTimeline = (chunkKey) => {
   selectedChunkId.value = selectedChunkId.value === chunkKey ? null : chunkKey
@@ -111,17 +139,37 @@ const formatChunkTime = (iso) => {
   <article
     :class="[
       'rounded-2xl border-2 bg-back-secondary/40 transition-colors duration-300',
-      expanded ? 'border-white/25 bg-back-secondary/55' : 'border-back-secondary hover:border-white/20',
+      selected
+        ? 'border-brand-green/70 bg-back-secondary/55'
+        : expanded
+          ? 'border-white/25 bg-back-secondary/55'
+          : 'border-back-secondary hover:border-white/20',
     ]"
   >
     <!-- Session Summary Header (click to expand/collapse chunks dropdown) -->
-    <button
-      type="button"
-      class="flex w-full flex-col gap-3 px-5 py-4 text-left transition hover:bg-white/[0.02] lg:flex-row lg:items-center lg:justify-between"
+    <div
+      class="flex w-full cursor-pointer flex-col gap-3 px-5 py-4 text-left transition hover:bg-white/[0.02] lg:flex-row lg:items-center lg:justify-between"
+      role="button"
+      tabindex="0"
       :aria-expanded="expanded"
       @click="$emit('toggle', session.session_id)"
+      @keydown.enter.prevent="$emit('toggle', session.session_id)"
     >
       <div class="flex min-w-0 items-start gap-3.5 lg:items-center">
+        <!-- Session Checklist Checkbox -->
+        <label
+          class="mt-1 flex shrink-0 cursor-pointer items-center lg:mt-0"
+          :aria-label="`Select ${displayTitle}`"
+          @click.stop
+        >
+          <input
+            type="checkbox"
+            :checked="selected"
+            class="size-4 cursor-pointer rounded border-white/30 bg-back-prime accent-brand-green"
+            @change="$emit('toggle-select', session.session_id)"
+          />
+        </label>
+
         <span
           :class="[
             'mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-back-prime/80 text-slate-300 transition-transform duration-500 lg:mt-0',
@@ -185,7 +233,7 @@ const formatChunkTime = (iso) => {
 
         <StatusChip :label="meta.label" :tone="meta.tone" />
       </div>
-    </button>
+    </div>
 
     <!-- Smooth Dropdown Body: HR Metadata + Export Modal Trigger + Chunks Table -->
     <div
@@ -276,6 +324,25 @@ const formatChunkTime = (iso) => {
               >
                 {{ copied ? 'Copied' : 'Copy Summary' }}
               </button>
+
+              <button
+                type="button"
+                :disabled="sharing"
+                class="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/15 disabled:opacity-45"
+                @click="createShareLink"
+              >
+                {{ sharing ? 'Signing...' : shareCopied ? 'Link Copied' : 'Share Link' }}
+              </button>
+
+              <a
+                v-if="shareUrl"
+                :href="shareUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="rounded-lg border border-white/15 bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-slate-100 transition hover:bg-white/20"
+              >
+                Open
+              </a>
 
               <button
                 type="button"

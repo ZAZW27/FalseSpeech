@@ -53,13 +53,17 @@ const page = ref(1)
 
 // Expanded sessions & cached chunks per session_id
 const expandedIds = reactive(new Set())
+const selectedIds = reactive(new Set())
 const segmentsBySession = reactive({})
 const loadingSegmentsBySession = reactive({})
 
 // Google Docs-style Export Preview Modal state
 const exportModalOpen = ref(false)
 const exportSessionId = ref(null)
+const exportSessionIds = ref(null)
 const exportSessionTitle = ref('')
+const batchSharing = ref(false)
+const batchShareUrl = ref('')
 
 const showToast = (msg) => {
   toastMessage.value = msg
@@ -68,10 +72,53 @@ const showToast = (msg) => {
   }, 3000)
 }
 
-const openExportModal = ({ sessionId = null, title = '' } = {}) => {
+const openExportModal = ({ sessionId = null, sessionIds = null, title = '' } = {}) => {
   exportSessionId.value = sessionId
+  exportSessionIds.value = sessionIds
   exportSessionTitle.value = title
   exportModalOpen.value = true
+}
+
+const toggleSelectSession = (sessionId) => {
+  if (selectedIds.has(sessionId)) selectedIds.delete(sessionId)
+  else selectedIds.add(sessionId)
+  batchShareUrl.value = ''
+}
+
+const clearSelection = () => {
+  selectedIds.clear()
+  batchShareUrl.value = ''
+}
+
+const exportSelectedSessions = () => {
+  if (!selectedIds.size) return
+  openExportModal({ sessionIds: [...selectedIds] })
+}
+
+const shareSelectedSessions = async () => {
+  if (!selectedIds.size || batchSharing.value) return
+  batchSharing.value = true
+  try {
+    const res = await authFetch('/api/history/share-batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_ids: [...selectedIds] }),
+    })
+    if (!res.ok) throw new Error('Batch share failed')
+    const data = await res.json()
+    const fullUrl = `${window.location.origin}${data.share_path}`
+    batchShareUrl.value = fullUrl
+    try {
+      await navigator.clipboard.writeText(fullUrl)
+      showToast(`Copied share link for ${data.count} selected session(s).`)
+    } catch {
+      showToast(`Generated share link for ${data.count} selected session(s).`)
+    }
+  } catch {
+    showToast('Could not create share link for selected sessions.')
+  } finally {
+    batchSharing.value = false
+  }
 }
 
 const activeExportFilters = computed(() => ({
@@ -246,6 +293,19 @@ const allPageExpanded = computed(
   () => pageSessions.value.length > 0 && pageSessions.value.every((s) => expandedIds.has(s.session_id)),
 )
 
+const allPageSelected = computed(
+  () => pageSessions.value.length > 0 && pageSessions.value.every((s) => selectedIds.has(s.session_id)),
+)
+
+const toggleSelectAllOnPage = () => {
+  if (allPageSelected.value) {
+    pageSessions.value.forEach((s) => selectedIds.delete(s.session_id))
+  } else {
+    pageSessions.value.forEach((s) => selectedIds.add(s.session_id))
+  }
+  batchShareUrl.value = ''
+}
+
 const toggleExpandAllOnPage = () => {
   if (allPageExpanded.value) {
     pageSessions.value.forEach((s) => expandedIds.delete(s.session_id))
@@ -295,6 +355,7 @@ const handleDeleteSession = async (sessionId) => {
     if (!res.ok && res.status !== 204) throw new Error('Delete failed')
     history.value = history.value.filter((s) => s.session_id !== sessionId)
     expandedIds.delete(sessionId)
+    selectedIds.delete(sessionId)
     delete segmentsBySession[sessionId]
     showToast(`Session #${sessionId} deleted.`)
   } catch {
@@ -503,11 +564,60 @@ onMounted(loadHistory)
           </div>
         </section>
 
-        <!-- List Header + Expand/Collapse All -->
-        <div v-if="filteredSessions.length" class="flex items-center justify-between px-1">
-          <p class="text-xs text-slate-400">
-            Click any session row to inspect its audio chunks, edit candidate notes, or export an individual report.
-          </p>
+        <!-- List Header + Select All + Bulk Actions + Expand/Collapse All -->
+        <div v-if="filteredSessions.length" class="flex flex-wrap items-center justify-between gap-3 px-1">
+          <div class="flex flex-wrap items-center gap-3">
+            <label class="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-200">
+              <input
+                type="checkbox"
+                :checked="allPageSelected"
+                class="size-4 cursor-pointer rounded border-white/30 bg-back-prime accent-brand-green"
+                @change="toggleSelectAllOnPage"
+              />
+              <span>Select all on page</span>
+            </label>
+
+            <template v-if="selectedIds.size > 0">
+              <span class="rounded-full border border-white/15 bg-white/10 px-2.5 py-0.5 text-[11px] font-bold text-slate-100">
+                {{ selectedIds.size }} selected
+              </span>
+              <button
+                type="button"
+                class="rounded-lg border border-brand-green/40 bg-[#2f6b5e] px-3 py-1.5 text-xs font-bold text-slate-100 transition hover:bg-[#387c6d]"
+                @click="exportSelectedSessions"
+              >
+                Export Selected
+              </button>
+              <button
+                type="button"
+                :disabled="batchSharing"
+                class="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:bg-white/20 disabled:opacity-45"
+                @click="shareSelectedSessions"
+              >
+                {{ batchSharing ? 'Signing...' : 'Share Selected' }}
+              </button>
+              <a
+                v-if="batchShareUrl"
+                :href="batchShareUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="rounded-lg border border-white/15 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-100 transition hover:bg-white/15"
+              >
+                Open Link
+              </a>
+              <button
+                type="button"
+                class="text-xs font-semibold text-slate-400 transition hover:text-slate-100"
+                @click="clearSelection"
+              >
+                Clear
+              </button>
+            </template>
+            <p v-else class="hidden text-xs text-slate-400 sm:block">
+              Check sessions to export or share them together, or click any row to inspect chunks.
+            </p>
+          </div>
+
           <button
             type="button"
             class="shrink-0 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/15"
@@ -532,9 +642,11 @@ onMounted(loadHistory)
             :key="session.session_id"
             :session="session"
             :expanded="expandedIds.has(session.session_id)"
+            :selected="selectedIds.has(session.session_id)"
             :segments="segmentsBySession[session.session_id] ?? null"
             :loading-segments="Boolean(loadingSegmentsBySession[session.session_id])"
             @toggle="toggleSession"
+            @toggle-select="toggleSelectSession"
             @save-meta="handleSaveMeta"
             @delete="handleDeleteSession"
             @open-export="openExportModal"
@@ -557,6 +669,7 @@ onMounted(loadHistory)
     <ExportPreviewModal
       v-model="exportModalOpen"
       :session-id="exportSessionId"
+      :session-ids="exportSessionIds"
       :session-title="exportSessionTitle"
       :filters="activeExportFilters"
       @downloaded="(file) => showToast(`Downloaded ${file}`)"

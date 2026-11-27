@@ -9,6 +9,7 @@ const HistoryPage = () => import('@/pages/history/page.vue')
 const PlanPage = () => import('@/pages/plan/page.vue')
 const ProfilePage = () => import('@/pages/profile/page.vue')
 const PaymentFinishPage = () => import('@/pages/payment/finish.vue')
+const VerifyReportPage = () => import('@/pages/verify/page.vue')
 
 const routes = [
   {
@@ -37,6 +38,7 @@ const routes = [
   { path: '/plan', name: 'plan', component: PlanPage, meta: { title: 'Plan' } },
   { path: '/profile', name: 'profile', component: ProfilePage, meta: { title: 'Profile' } },
   { path: '/payment/finish', name: 'payment-finish', component: PaymentFinishPage, meta: { title: 'Payment Status' } },
+  { path: '/verify/:token', name: 'verify-report', component: VerifyReportPage, meta: { title: 'Verified Report' } },
 ]
 
 const router = createRouter({

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fpdf import FPDF
+from app.service.report_verify import build_hr_risk_brief, compute_integrity_hash
 
 
 def _safe_ascii(text: Any) -> str:
@@ -335,6 +336,33 @@ def export_history_pdf(items: list[tuple[Any, list[Any]]], user_name: str, user_
             pdf.set_text_color(30, 41, 59)
             pdf.set_font("Helvetica", "I", 8.5)
             pdf.multi_cell(182, 5.5, _safe_ascii(f"  HR Notes: {row.notes.strip()}"), border="LRB")
+
+        # HR Risk Brief & Tamper-Evident Integrity Digest
+        brief = build_hr_risk_brief(row, segs)
+        digest = compute_integrity_hash(row, segs)
+        pdf.set_fill_color(241, 245, 249)
+        pdf.set_text_color(15, 23, 42)
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.cell(
+            182,
+            5.5,
+            _safe_ascii(f"  HR RISK BRIEF [{brief['risk_level'].upper()}]: {brief['headline']}"),
+            border="LR",
+            fill=True,
+            ln=1,
+        )
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(51, 65, 85)
+        pdf.multi_cell(
+            182,
+            4.8,
+            _safe_ascii(f"  {brief['summary']} Recommendation: {brief['recommendation']}"),
+            border="LRB",
+            fill=True,
+        )
+        pdf.set_font("Courier", "", 7.2)
+        pdf.set_text_color(100, 116, 139)
+        pdf.cell(182, 5, _safe_ascii(f"  SHA-256 Integrity Digest: {digest}"), border="LRB", ln=1)
 
         if segs:
             # Chunk table header
