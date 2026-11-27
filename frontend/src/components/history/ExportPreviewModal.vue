@@ -13,6 +13,7 @@ const FORMATS = [
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   sessionId: { type: String, default: null },
+  sessionIds: { type: Array, default: null },
   sessionTitle: { type: String, default: '' },
   filters: { type: Object, default: () => ({}) },
 })
@@ -27,9 +28,12 @@ const previewText = ref('')
 const currentBlob = ref(null)
 const currentFilename = ref('')
 
-const modalTitle = computed(() =>
-  props.sessionId ? `Export ${props.sessionTitle || `Session #${props.sessionId}`}` : 'Export Detection Report',
-)
+const modalTitle = computed(() => {
+  if (props.sessionIds && props.sessionIds.length) {
+    return `Export ${props.sessionIds.length} Selected Session${props.sessionIds.length === 1 ? '' : 's'}`
+  }
+  return props.sessionId ? `Export ${props.sessionTitle || `Session #${props.sessionId}`}` : 'Export Detection Report'
+})
 
 const revokePreviewUrl = () => {
   if (previewBlobUrl.value) {
@@ -40,7 +44,9 @@ const revokePreviewUrl = () => {
 
 const buildQuery = (format) => {
   const params = new URLSearchParams({ format })
-  if (props.sessionId) {
+  if (props.sessionIds && props.sessionIds.length) {
+    params.set('session_ids', props.sessionIds.join(','))
+  } else if (props.sessionId) {
     params.set('session_id', String(props.sessionId))
   } else {
     const f = props.filters || {}

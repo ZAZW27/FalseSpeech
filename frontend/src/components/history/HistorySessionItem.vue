@@ -1,18 +1,21 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { authFetch } from '@/assets/js/api'
 import { formatDateTime, formatSessionDuration, ratioToPercent } from '@/assets/js/format'
 import { getVerdictMeta } from '@/assets/js/historyStats'
 import ConfidenceBar from '@/components/ui/charts/ConfidenceBar.vue'
 import StatusChip from '@/components/ui/badges/StatusChip.vue'
+import SessionRiskTimeline from '@/components/history/SessionRiskTimeline.vue'
 
 const props = defineProps({
   session: { type: Object, required: true },
   expanded: { type: Boolean, default: false },
+  selected: { type: Boolean, default: false },
   segments: { type: Array, default: null }, // null = not yet loaded
   loadingSegments: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['toggle', 'save-meta', 'delete', 'open-export'])
+const emit = defineEmits(['toggle', 'toggle-select', 'save-meta', 'delete', 'open-export'])
 
 const editingMeta = ref(false)
 const draftTitle = ref('')
@@ -20,13 +23,56 @@ const draftNotes = ref('')
 const savingMeta = ref(false)
 const confirmDelete = ref(false)
 const copied = ref(false)
+const sharing = ref(false)
+const shareUrl = ref('')
+const shareCopied = ref(false)
 const chunkFilter = ref('all') // 'all' | 'fake' | 'real'
+const selectedChunkId = ref(null)
+
+const createShareLink = async () => {
+  if (sharing.value) return
+  sharing.value = true
+  try {
+    const res = await authFetch(`/api/history/${encodeURIComponent(props.session.session_id)}/share`, {
+      method: 'POST',
+    })
+    if (!res.ok) throw new Error('Share link failed')
+    const data = await res.json()
+    const fullUrl = `${window.location.origin}${data.share_path}`
+    shareUrl.value = fullUrl
+    try {
+      await navigator.clipboard.writeText(fullUrl)
+      shareCopied.value = true
+      setTimeout(() => {
+        shareCopied.value = false
+      }, 2500)
+    } catch {}
+  } finally {
+    sharing.value = false
+  }
+}
+
+const selectChunkFromTimeline = (chunkKey) => {
+  selectedChunkId.value = selectedChunkId.value === chunkKey ? null : chunkKey
+  if (chunkFilter.value !== 'all') chunkFilter.value = 'all'
+}
 
 const meta = computed(() => getVerdictMeta(props.session.verdict))
 const fakePercent = computed(() => ratioToPercent(props.session.fake_ratio))
 const peakPercent = computed(() => ratioToPercent(props.session.max_fake_prob ?? props.session.fake_ratio))
 const displayTitle = computed(() => (props.session.title || '').trim() || `Session #${props.session.session_id}`)
+const isLongTitle = computed(() => displayTitle.value.length > 36)
 const dateLabel = computed(() => formatDateTime(props.session.started_at))
+
+// Left-to-right linear progress border around the AI / Human verdict pill
+const verdictBorderStyle = computed(() => {
+  const isDanger = meta.value.tone === 'danger'
+  const pct = isDanger ? Math.min(100, Math.max(0, fakePercent.value)) : Math.min(100, Math.max(0, 100 - fakePercent.value))
+  const color = isDanger ? '#ff96a1' : '#B7D894'
+  return {
+    background: `linear-gradient(to right, ${color} ${pct}%, rgba(255, 255, 255, 0.18) ${pct}%)`,
+  }
+})
 const durationLabel = computed(() => formatSessionDuration(props.session.duration))
 const sourceLabel = computed(() => String(props.session.source || 'web').toUpperCase())
 
@@ -104,17 +150,49 @@ const formatChunkTime = (iso) => {
   <article
     :class="[
       'rounded-2xl border-2 bg-back-secondary/40 transition-colors duration-300',
-      expanded ? 'border-white/25 bg-back-secondary/55' : 'border-back-secondary hover:border-white/20',
+      selected
+        ? 'border-brand-green/70 bg-back-secondary/55'
+        : expanded
+          ? 'border-white/25 bg-back-secondary/55'
+          : 'border-back-secondary hover:border-white/20',
     ]"
   >
     <!-- Session Summary Header (click to expand/collapse chunks dropdown) -->
-    <button
-      type="button"
-      class="flex w-full flex-col gap-3 px-5 py-4 text-left transition hover:bg-white/[0.02] lg:flex-row lg:items-center lg:justify-between"
+    <div
+      class="flex w-full cursor-pointer flex-col gap-3 px-5 py-4 text-left transition hover:bg-white/[0.02] lg:flex-row lg:items-center lg:justify-between lg:gap-5"
+      role="button"
+      tabindex="0"
       :aria-expanded="expanded"
       @click="$emit('toggle', session.session_id)"
+      @keydown.enter.prevent="$emit('toggle', session.session_id)"
     >
-      <div class="flex min-w-0 items-start gap-3.5 lg:items-center">
+      <div class="flex min-w-0 flex-1 items-start gap-3.5 lg:items-center">
+        <!-- Custom Dark-Theme Session Checkbox -->
+        <label
+          class="relative mt-1 flex shrink-0 cursor-pointer items-center lg:mt-0"
+          :aria-label="`Select ${displayTitle}`"
+          @click.stop
+        >
+          <input
+            type="checkbox"
+            :checked="selected"
+            class="peer size-4 cursor-pointer appearance-none rounded border-2 border-white/35 bg-back-prime transition hover:border-white/60 checked:border-brand-green checked:bg-brand-green"
+            @change="$emit('toggle-select', session.session_id)"
+          />
+          <svg
+            viewBox="0 0 12 12"
+            class="pointer-events-none absolute left-0.5 top-0.5 size-3 text-back-prime opacity-0 transition peer-checked:opacity-100"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M2.5 6.5L5 9L9.5 3.5" />
+          </svg>
+        </label>
+
         <span
           :class="[
             'mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-back-prime/80 text-slate-300 transition-transform duration-500 lg:mt-0',
@@ -132,9 +210,9 @@ const formatChunkTime = (iso) => {
         </span>
 
         <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-center gap-2">
-            <h3 class="truncate text-sm font-bold text-white sm:text-base">{{ displayTitle }}</h3>
-            <span class="rounded-md bg-white/10 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-slate-300">
+          <!-- Badges cleanly on top of the session name -->
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-slate-300">
               #{{ session.session_id }}
             </span>
             <span
@@ -144,10 +222,23 @@ const formatChunkTime = (iso) => {
             </span>
             <span
               v-if="session.notes"
-              class="rounded-md border border-white/15 bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold text-white"
+              class="rounded-md border border-white/15 bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold text-slate-100"
             >
               HR Note
             </span>
+          </div>
+
+          <!-- Clean truncated title with full-name hover tooltip (no marquee) -->
+          <div class="group/title relative mt-1 min-w-0">
+            <h3 :title="displayTitle" class="truncate text-sm font-bold text-slate-100 sm:text-base">
+              {{ displayTitle }}
+            </h3>
+            <div
+              v-if="isLongTitle"
+              class="pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden max-w-[460px] rounded-xl border border-white/20 bg-back-prime px-3 py-1.5 text-xs font-semibold text-slate-100 shadow-xl group-hover/title:block"
+            >
+              {{ displayTitle }}
+            </div>
           </div>
 
           <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
@@ -155,7 +246,7 @@ const formatChunkTime = (iso) => {
             <span aria-hidden="true">&bull;</span>
             <span class="tabular-nums">{{ durationLabel }}</span>
             <span aria-hidden="true">&bull;</span>
-            <span class="tabular-nums font-medium text-white">
+            <span class="tabular-nums font-medium text-slate-100">
               {{ session.total_chunks }} chunk{{ session.total_chunks === 1 ? '' : 's' }}
               <span class="font-normal text-slate-400">
                 ({{ session.fake_count }} AI / {{ session.real_count }} Human)
@@ -165,20 +256,23 @@ const formatChunkTime = (iso) => {
         </div>
       </div>
 
-      <div class="flex flex-wrap items-center justify-between gap-4 pl-11 lg:justify-end lg:pl-0">
-        <div class="flex items-center gap-2.5">
-          <div class="w-24">
-            <ConfidenceBar :value="fakePercent" :tone="meta.tone" height-class="h-1.5" />
-          </div>
-          <div class="text-right">
-            <p class="text-xs font-bold tabular-nums text-white">{{ fakePercent }}% AI</p>
-            <p class="text-[10px] tabular-nums text-slate-400">Peak {{ peakPercent }}%</p>
-          </div>
+      <!-- Stacked % readout + Verdict pill whose 2px border fills left-to-right -->
+      <div class="flex shrink-0 flex-col items-end gap-1.5 pl-11 lg:pl-0">
+        <div class="text-right tabular-nums leading-tight">
+          <p class="text-xs font-bold text-slate-100">{{ fakePercent }}% AI</p>
+          <p class="text-[10px] text-slate-400">Peak {{ peakPercent }}%</p>
         </div>
 
-        <StatusChip :label="meta.label" :tone="meta.tone" />
+        <span class="inline-flex rounded-full p-[2px]" :style="verdictBorderStyle">
+          <span
+            class="inline-flex items-center gap-2 whitespace-nowrap rounded-full bg-back-prime px-3 py-1 text-xs font-semibold text-slate-100"
+          >
+            <span :class="['size-1.5 rounded-full', meta.tone === 'danger' ? 'bg-red-400' : 'bg-brand-green']" />
+            {{ meta.label }}
+          </span>
+        </span>
       </div>
-    </button>
+    </div>
 
     <!-- Smooth Dropdown Body: HR Metadata + Export Modal Trigger + Chunks Table -->
     <div
@@ -272,6 +366,25 @@ const formatChunkTime = (iso) => {
 
               <button
                 type="button"
+                :disabled="sharing"
+                class="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/15 disabled:opacity-45"
+                @click="createShareLink"
+              >
+                {{ sharing ? 'Signing...' : shareCopied ? 'Link Copied' : 'Share Link' }}
+              </button>
+
+              <a
+                v-if="shareUrl"
+                :href="shareUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="rounded-lg border border-white/15 bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-slate-100 transition hover:bg-white/20"
+              >
+                Open
+              </a>
+
+              <button
+                type="button"
                 class="rounded-lg border border-brand-green/40 bg-[#2f6b5e] px-3 py-1.5 text-xs font-bold text-slate-100 transition hover:bg-[#387c6d]"
                 @click="$emit('open-export', { sessionId: session.session_id, title: displayTitle })"
               >
@@ -306,8 +419,16 @@ const formatChunkTime = (iso) => {
             </div>
           </div>
 
+          <!-- Session Risk Timeline Chart -->
+          <SessionRiskTimeline
+            v-if="!loadingSegments && segments && segments.length"
+            :segments="segments"
+            :selected-chunk-id="selectedChunkId"
+            @select-chunk="selectChunkFromTimeline"
+          />
+
           <!-- Chunks Section Header + Filter -->
-          <div class="mt-3.5 flex flex-wrap items-center justify-between gap-2">
+          <div class="mt-4 flex flex-wrap items-center justify-between gap-2">
             <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
               Recorded Audio Chunks ({{ filteredSegments.length }})
             </p>
@@ -360,7 +481,11 @@ const formatChunkTime = (iso) => {
                 <tr
                   v-for="seg in filteredSegments"
                   :key="seg.id ?? seg.offset"
-                  class="border-b border-white/5 transition last:border-b-0 hover:bg-white/[0.03]"
+                  :class="[
+                    'border-b border-white/5 transition last:border-b-0 hover:bg-white/[0.04]',
+                    selectedChunkId === (seg.id ?? seg.offset) ? 'bg-white/[0.08]' : '',
+                  ]"
+                  @click="selectedChunkId = seg.id ?? seg.offset"
                 >
                   <td class="px-4 py-2.5 tabular-nums text-slate-300">#{{ seg.offset }}</td>
                   <td class="px-4 py-2.5 tabular-nums text-slate-300">{{ formatChunkTime(seg.recorded_at) }}</td>

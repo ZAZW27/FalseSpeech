@@ -8,7 +8,13 @@ const ALL_STEPS = [
     id: 'welcome',
     target: null,
     title: 'Welcome to False Speech Dashboard',
-    body: 'This quick walkthrough explains how to set up your audio input, start live voice screening, read AI detection verdicts, and review your daily activity. You can replay this guide anytime using the Tutorial button in the bottom-right corner.',
+    body: 'This quick walkthrough explains how to screen live calls or pre-recorded meetings, auto-detect your audio driver, enable hands-free AI alerts, and review your daily activity. You can replay this guide anytime using the Tutorial button in the bottom-right corner.',
+  },
+  {
+    id: 'source-toggle',
+    target: '[data-tour="source-toggle"]',
+    title: 'Live vs Recorded Mode',
+    body: 'Switch between Live for real-time audio screening and Recorded to drag and drop meeting or voice files. Recorded files are processed in browser RAM and streamed in lossless 16 kHz chunks, with Manual Split and Auto-Split Speakers to separate multi-speaker conversations into individual sessions.',
   },
   {
     id: 'play-control',
@@ -35,6 +41,12 @@ const ALL_STEPS = [
     body: 'Each analyzed audio chunk updates this panel with a REAL, FAKE, UNCERTAIN, or SILENT verdict along with the AI fake probability score. Use this during live interviews, calls, or media playback to spot synthetic voices immediately.',
   },
   {
+    id: 'alerts-toggle',
+    target: '[data-tour="alerts-toggle"]',
+    title: 'Hands-Free Desktop AI Alerts',
+    body: 'Enable Alerts if you are running False Speech in a background tab during a Zoom or Google Meet call. When 2 consecutive chunks detect an AI voice, False Speech sends a desktop notification banner and a subtle chime so you do not have to watch this tab.',
+  },
+  {
     id: 'terminal-toggle',
     target: '[data-tour="terminal-toggle"]',
     title: 'Optional Live Terminal',
@@ -44,7 +56,7 @@ const ALL_STEPS = [
     id: 'stats-row',
     target: '[data-tour="stats-row"]',
     title: 'Daily Quota, Stats, and Session History',
-    body: 'Track your daily listening time, total checks, AI voices flagged, and human voices verified here. Scroll down to view your 7-day activity chart and live session table, or open Detection History in the sidebar to inspect chunks, add HR notes, and export reports.',
+    body: 'Track your daily listening time, total checks, AI voices flagged, and human voices verified here. Scroll down to view your 7-day activity chart and live session table, or open Detection History in the sidebar to inspect risk timelines, add HR notes, export reports, or share verified links.',
   },
 ]
 

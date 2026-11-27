@@ -33,6 +33,7 @@ const isInternalDriver = (label) => {
   return false
 }
 
+const hasAnyInternalDriver = computed(() => rows.value.some((r) => r.kind === 'internal'))
 const activeInternalRows = computed(() => rows.value.filter((r) => r.status === 'active' && r.kind === 'internal'))
 const activeExternalRows = computed(() => rows.value.filter((r) => r.status === 'active' && r.kind === 'external'))
 const noInternalDetected = computed(() => scanDone.value && activeInternalRows.value.length === 0)
@@ -368,12 +369,16 @@ onBeforeUnmount(stopTestTone)
         class="mt-4 rounded-2xl border border-amber-400/35 bg-amber-400/10 px-4 py-3 text-xs leading-relaxed text-amber-100"
         role="alert"
       >
-        <p class="font-bold text-amber-200">No internal system sound detected.</p>
+        <p class="font-bold text-amber-200">
+          {{ hasAnyInternalDriver ? 'No internal system sound detected.' : 'Browser hides internal audio drivers.' }}
+        </p>
         <p class="mt-0.5 text-amber-100/90">
           {{
-            activeExternalRows.length
-              ? 'Only an external microphone picked up sound. Check that your headphones/speaker output is active, or play an audio/video clip and click Scan Again.'
-              : 'All drivers were silent. Make sure your system output is unmuted, play an audio/video clip and click Scan Again, or use Mode B: Tab / System Share.'
+            !hasAnyInternalDriver
+              ? 'Brave, Chrome, and Edge block direct system loopback drivers by default. Click Use Tab / System Share below and enable "Share audio" to listen to system sound.'
+              : activeExternalRows.length
+                ? 'Only an external microphone picked up sound. Check that your output is unmuted and click Scan Again, or use Tab / System Share.'
+                : 'All internal drivers were silent. Unmute your speakers or headphones and click Scan Again, or use Tab / System Share.'
           }}
         </p>
       </div>

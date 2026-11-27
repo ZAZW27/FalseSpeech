@@ -22,7 +22,8 @@ const verdictOptions = [
 
 const sourceOptions = [
   { value: 'all', label: 'All Sources' },
-  { value: 'web', label: 'Web Dashboard' },
+  { value: 'web', label: 'Web Live' },
+  { value: 'upload', label: 'Recorded Upload' },
   { value: 'android', label: 'Android App' },
 ]
 
@@ -52,13 +53,17 @@ const page = ref(1)
 
 // Expanded sessions & cached chunks per session_id
 const expandedIds = reactive(new Set())
+const selectedIds = reactive(new Set())
 const segmentsBySession = reactive({})
 const loadingSegmentsBySession = reactive({})
 
 // Google Docs-style Export Preview Modal state
 const exportModalOpen = ref(false)
 const exportSessionId = ref(null)
+const exportSessionIds = ref(null)
 const exportSessionTitle = ref('')
+const batchSharing = ref(false)
+const batchShareUrl = ref('')
 
 const showToast = (msg) => {
   toastMessage.value = msg
@@ -67,10 +72,53 @@ const showToast = (msg) => {
   }, 3000)
 }
 
-const openExportModal = ({ sessionId = null, title = '' } = {}) => {
+const openExportModal = ({ sessionId = null, sessionIds = null, title = '' } = {}) => {
   exportSessionId.value = sessionId
+  exportSessionIds.value = sessionIds
   exportSessionTitle.value = title
   exportModalOpen.value = true
+}
+
+const toggleSelectSession = (sessionId) => {
+  if (selectedIds.has(sessionId)) selectedIds.delete(sessionId)
+  else selectedIds.add(sessionId)
+  batchShareUrl.value = ''
+}
+
+const clearSelection = () => {
+  selectedIds.clear()
+  batchShareUrl.value = ''
+}
+
+const exportSelectedSessions = () => {
+  if (!selectedIds.size) return
+  openExportModal({ sessionIds: [...selectedIds] })
+}
+
+const shareSelectedSessions = async () => {
+  if (!selectedIds.size || batchSharing.value) return
+  batchSharing.value = true
+  try {
+    const res = await authFetch('/api/history/share-batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_ids: [...selectedIds] }),
+    })
+    if (!res.ok) throw new Error('Batch share failed')
+    const data = await res.json()
+    const fullUrl = `${window.location.origin}${data.share_path}`
+    batchShareUrl.value = fullUrl
+    try {
+      await navigator.clipboard.writeText(fullUrl)
+      showToast(`Copied share link for ${data.count} selected session(s).`)
+    } catch {
+      showToast(`Generated share link for ${data.count} selected session(s).`)
+    }
+  } catch {
+    showToast('Could not create share link for selected sessions.')
+  } finally {
+    batchSharing.value = false
+  }
 }
 
 const activeExportFilters = computed(() => ({
@@ -245,6 +293,19 @@ const allPageExpanded = computed(
   () => pageSessions.value.length > 0 && pageSessions.value.every((s) => expandedIds.has(s.session_id)),
 )
 
+const allPageSelected = computed(
+  () => pageSessions.value.length > 0 && pageSessions.value.every((s) => selectedIds.has(s.session_id)),
+)
+
+const toggleSelectAllOnPage = () => {
+  if (allPageSelected.value) {
+    pageSessions.value.forEach((s) => selectedIds.delete(s.session_id))
+  } else {
+    pageSessions.value.forEach((s) => selectedIds.add(s.session_id))
+  }
+  batchShareUrl.value = ''
+}
+
 const toggleExpandAllOnPage = () => {
   if (allPageExpanded.value) {
     pageSessions.value.forEach((s) => expandedIds.delete(s.session_id))
@@ -294,6 +355,7 @@ const handleDeleteSession = async (sessionId) => {
     if (!res.ok && res.status !== 204) throw new Error('Delete failed')
     history.value = history.value.filter((s) => s.session_id !== sessionId)
     expandedIds.delete(sessionId)
+    selectedIds.delete(sessionId)
     delete segmentsBySession[sessionId]
     showToast(`Session #${sessionId} deleted.`)
   } catch {
@@ -467,9 +529,9 @@ onMounted(loadHistory)
                   :key="preset.id"
                   type="button"
                   :class="[
-                    'h-10 rounded-xl border px-3 text-xs font-semibold transition',
+                    'h-10 rounded-xl border px-3 text-xs font-bold transition',
                     activePreset === preset.id
-                      ? 'border-white bg-white text-back-prime'
+                      ? 'border-brand-green bg-gradient-to-r from-[#b7d894] via-[#c3e2a2] to-[#a7cb82] text-back-prime shadow-sm'
                       : 'border-white/15 bg-white/5 text-slate-300 hover:border-white/30 hover:text-white',
                   ]"
                   @click="applyDatePreset(preset.id)"
@@ -488,12 +550,12 @@ onMounted(loadHistory)
               </div>
             </div>
 
-            <!-- Single clean Export button (green with crisp white text -> opens preview modal) -->
+            <!-- Single clean Export button (prime green gradient -> opens preview modal) -->
             <div class="flex items-center">
               <button
                 type="button"
                 :disabled="!filteredSessions.length"
-                class="h-10 rounded-xl border border-brand-green/40 bg-[#2f6b5e] px-5 text-xs font-bold text-slate-100 shadow-sm transition hover:bg-[#387c6d] disabled:opacity-40"
+                class="h-10 rounded-xl bg-gradient-to-r from-[#b7d894] via-[#c3e2a2] to-[#a7cb82] px-5 text-xs font-bold text-back-prime shadow-sm transition hover:brightness-105 disabled:opacity-40"
                 @click="openExportModal()"
               >
                 Export Report
@@ -502,11 +564,74 @@ onMounted(loadHistory)
           </div>
         </section>
 
-        <!-- List Header + Expand/Collapse All -->
-        <div v-if="filteredSessions.length" class="flex items-center justify-between px-1">
-          <p class="text-xs text-slate-400">
-            Click any session row to inspect its audio chunks, edit candidate notes, or export an individual report.
-          </p>
+        <!-- List Header + Select All + Bulk Actions + Expand/Collapse All -->
+        <div v-if="filteredSessions.length" class="flex flex-wrap items-center justify-between gap-3 px-1">
+          <div class="flex flex-wrap items-center gap-3">
+            <label class="relative inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-200">
+              <span class="relative flex items-center">
+                <input
+                  type="checkbox"
+                  :checked="allPageSelected"
+                  class="peer size-4 cursor-pointer appearance-none rounded border-2 border-white/35 bg-back-prime transition hover:border-white/60 checked:border-brand-green checked:bg-brand-green"
+                  @change="toggleSelectAllOnPage"
+                />
+                <svg
+                  viewBox="0 0 12 12"
+                  class="pointer-events-none absolute left-0.5 top-0.5 size-3 text-back-prime opacity-0 transition peer-checked:opacity-100"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M2.5 6.5L5 9L9.5 3.5" />
+                </svg>
+              </span>
+              <span>Select all on page</span>
+            </label>
+
+            <template v-if="selectedIds.size > 0">
+              <span class="rounded-full border border-white/15 bg-white/10 px-2.5 py-0.5 text-[11px] font-bold text-slate-100">
+                {{ selectedIds.size }} selected
+              </span>
+              <button
+                type="button"
+                class="rounded-lg bg-gradient-to-r from-[#b7d894] via-[#c3e2a2] to-[#a7cb82] px-3 py-1.5 text-xs font-bold text-back-prime shadow-sm transition hover:brightness-105"
+                @click="exportSelectedSessions"
+              >
+                Export Selected
+              </button>
+              <button
+                type="button"
+                :disabled="batchSharing"
+                class="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:bg-white/20 disabled:opacity-45"
+                @click="shareSelectedSessions"
+              >
+                {{ batchSharing ? 'Signing...' : 'Share Selected' }}
+              </button>
+              <a
+                v-if="batchShareUrl"
+                :href="batchShareUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="rounded-lg border border-white/15 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-100 transition hover:bg-white/15"
+              >
+                Open Link
+              </a>
+              <button
+                type="button"
+                class="text-xs font-semibold text-slate-400 transition hover:text-slate-100"
+                @click="clearSelection"
+              >
+                Clear
+              </button>
+            </template>
+            <p v-else class="hidden text-xs text-slate-400 sm:block">
+              Check sessions to export or share them together, or click any row to inspect chunks.
+            </p>
+          </div>
+
           <button
             type="button"
             class="shrink-0 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/15"
@@ -531,9 +656,11 @@ onMounted(loadHistory)
             :key="session.session_id"
             :session="session"
             :expanded="expandedIds.has(session.session_id)"
+            :selected="selectedIds.has(session.session_id)"
             :segments="segmentsBySession[session.session_id] ?? null"
             :loading-segments="Boolean(loadingSegmentsBySession[session.session_id])"
             @toggle="toggleSession"
+            @toggle-select="toggleSelectSession"
             @save-meta="handleSaveMeta"
             @delete="handleDeleteSession"
             @open-export="openExportModal"
@@ -556,6 +683,7 @@ onMounted(loadHistory)
     <ExportPreviewModal
       v-model="exportModalOpen"
       :session-id="exportSessionId"
+      :session-ids="exportSessionIds"
       :session-title="exportSessionTitle"
       :filters="activeExportFilters"
       @downloaded="(file) => showToast(`Downloaded ${file}`)"
