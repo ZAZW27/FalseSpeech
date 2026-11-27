@@ -22,7 +22,8 @@ const verdictOptions = [
 
 const sourceOptions = [
   { value: 'all', label: 'All Sources' },
-  { value: 'web', label: 'Web Dashboard' },
+  { value: 'web', label: 'Web Live' },
+  { value: 'upload', label: 'Recorded Upload' },
   { value: 'android', label: 'Android App' },
 ]
 

@@ -1,15 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
 import hmac
+import json
 import secrets
 from datetime import datetime, timedelta, timezone
 import random
 import uuid
 import logging
+import os
 
 from app.api.deps import get_curr_user
-from app.config import jwt_expires
+from app.config import jwt_expires, target_sr
 from app.db.models import (
     User,
     DetectionSessionRow,
@@ -33,6 +35,8 @@ from app.schemas import (
 )
 from app.security.passwords import hash_pass, verify_pass
 from app.service import auth, inference
+from app.service.audio import preprocess_audio
+from app.service.diarization import diarize_audio_tensor
 from app.service.conn_manager import manager
 from app.service.email_service import send_otp_email, send_invoice_email
 from app.service.history_export import (
@@ -720,6 +724,375 @@ def get_invoice_pdf(order_id: str, user: User = Depends(get_curr_user), db: Sess
             "Cache-Control": "private, no-store",
         },
     )
+
+
+# Pre-Recorded Audio Upload, Auto Speaker Diarization & Client-Chunked Detection -----------------------------------------------
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB for single-shot legacy upload; chunked mode handles 1GB+ client-side!
+
+
+@router.post("/api/detect/diarize", tags=["detection"])
+async def diarize_uploaded_audio(
+    file: UploadFile = File(...),
+    max_speakers: int = Form(4),
+    user: User = Depends(get_curr_user),
+):
+    """
+    Runs lightweight Silero VAD + MFCC speaker clustering sequentially BEFORE spoofing detection.
+    Client sends compressed 8kHz/16kHz mono audio so even long Zoom/Meet recordings stay tiny.
+    """
+    raw_bytes = await file.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=400, detail="Audio payload is empty.")
+    if len(raw_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Diarization payload exceeds 50 MB.")
+
+    wav_tensor = preprocess_audio(raw_bytes, target_sr=target_sr, device=None)
+    if wav_tensor is None or wav_tensor.shape[1] < int(target_sr * 0.5):
+        raise HTTPException(status_code=400, detail="Could not decode audio for speaker detection.")
+
+    import asyncio
+
+    segments = await asyncio.to_thread(
+        diarize_audio_tensor,
+        wav_tensor,
+        target_sr,
+        max(1, min(6, int(max_speakers or 4))),
+    )
+    unique_speakers = len({s["label"] for s in segments})
+    return {
+        "duration_s": round(wav_tensor.shape[1] / float(target_sr), 2),
+        "speakers_detected": unique_speakers,
+        "segments": segments,
+    }
+
+
+@router.post("/api/detect/chunk", tags=["detection"])
+async def detect_single_chunk(
+    file: UploadFile = File(...),
+    session_id: int = Form(...),
+    chunk_index: int = Form(1),
+    start_s: float = Form(0.0),
+    end_s: float = Form(0.0),
+    user: User = Depends(get_curr_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Client-chunked detection endpoint for large (1GB+) recordings:
+    Browser keeps the full file in client RAM, downsamples to lossless 16kHz mono WAV chunks,
+    and streams small chunks here one-by-one into an existing DetectionSessionRow.
+    """
+    if not inference.is_loaded():
+        raise HTTPException(status_code=503, detail="AI model is still loading. Please try again shortly.")
+
+    sess = (
+        db.query(DetectionSessionRow)
+        .filter(DetectionSessionRow.id == session_id, DetectionSessionRow.user_id == user.id)
+        .first()
+    )
+    if sess is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    raw_bytes = await file.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio chunk.")
+
+    _, device_used = inference.get_model()
+    wav_tensor = preprocess_audio(raw_bytes, target_sr=target_sr, device=device_used)
+    if wav_tensor is None or wav_tensor.shape[1] < int(target_sr * 0.3):
+        raise HTTPException(status_code=400, detail="Could not decode audio chunk.")
+
+    chunk_seconds = wav_tensor.shape[1] / float(target_sr)
+    now_utc = datetime.now(timezone.utc)
+    if user.quota_reset_at is None or user.quota_reset_at.replace(tzinfo=timezone.utc) < now_utc:
+        user.quota_used = 0
+        user.quota_reset_at = now_utc.replace(hour=23, minute=59, second=59, microsecond=0)
+        db.commit()
+
+    would_be_used = int(user.quota_used or 0) + max(1, int(round(chunk_seconds)))
+    if user.tier == "lifetime" and would_be_used > 43200:
+        raise HTTPException(
+            status_code=403,
+            detail="Fair Usage Policy exceeded. Lifetime users are limited to 12 hours of audio analysis per day.",
+        )
+    if would_be_used > user.quota_limit:
+        raise HTTPException(status_code=403, detail="Daily quota exceeded.")
+
+    ril_prob, fek_prob = await inference.enqueue_inference(wav_tensor, user.tier)
+    is_fake = fek_prob > 0.5
+
+    seg = DetectionSegmentRow(
+        session_id=sess.id,
+        offset_s=int(chunk_index),
+        duration_s=round(chunk_seconds, 2),
+        is_fake=is_fake,
+        fake_prob=float(fek_prob),
+        real_prob=float(ril_prob),
+        recorded_at=now_utc,
+    )
+    db.add(seg)
+    db.flush()
+
+    all_segs = (
+        db.query(DetectionSegmentRow)
+        .filter(DetectionSegmentRow.session_id == sess.id)
+        .all()
+    )
+    total_c = len(all_segs)
+    fake_count = sum(1 for s in all_segs if s.is_fake)
+    real_count = total_c - fake_count
+    avg_fake = sum(float(s.fake_prob or 0.0) for s in all_segs) / total_c if total_c else 0.0
+    if total_c == 0:
+        verdict = "real"
+    elif fake_count / total_c >= 0.5:
+        verdict = "fake"
+    elif fake_count / total_c <= 0.1:
+        verdict = "real"
+    else:
+        verdict = "mixed"
+
+    sess.fake_count = fake_count
+    sess.real_count = real_count
+    sess.avg_fake_prob = avg_fake
+    sess.verdict = verdict
+    sess.ended_at = now_utc
+    sess.duration_s = max(1, int(round(sum(float(s.duration_s or 0.0) for s in all_segs))))
+
+    add_sec = max(1, int(round(chunk_seconds)))
+    user.quota_used = int(user.quota_used or 0) + add_sec
+    user.cycle_quota_used = int(user.cycle_quota_used or 0) + add_sec
+    db.commit()
+
+    return {
+        "session_id": str(sess.id),
+        "chunk_index": int(chunk_index),
+        "start_s": round(float(start_s), 2),
+        "end_s": round(float(end_s), 2),
+        "duration_s": round(chunk_seconds, 2),
+        "fake_prob": float(fek_prob),
+        "real_prob": float(ril_prob),
+        "is_fake": is_fake,
+        "session_verdict": verdict,
+        "session_fake_ratio": avg_fake,
+        "quota_used": user.quota_used,
+        "quota_limit": user.quota_limit,
+    }
+
+
+@router.post("/api/detect/upload", tags=["detection"])
+async def detect_uploaded_audio(
+    file: UploadFile = File(...),
+    chunk_size: int = Form(5),
+    title: str | None = Form(None),
+    segments_json: str | None = Form(None),
+    user: User = Depends(get_curr_user),
+    db: Session = Depends(get_db),
+):
+    if not inference.is_loaded():
+        raise HTTPException(status_code=503, detail="AI model is still loading. Please try again shortly.")
+
+    raw_bytes = await file.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded audio file is empty.")
+    if len(raw_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Audio file exceeds the 50 MB upload limit.")
+
+    _, device_used = inference.get_model()
+    wav_tensor = preprocess_audio(raw_bytes, target_sr=target_sr, device=device_used)
+    if wav_tensor is None or wav_tensor.shape[1] < int(target_sr * 0.5):
+        raise HTTPException(
+            status_code=400,
+            detail="Could not decode audio file or audio is shorter than 0.5 seconds.",
+        )
+
+    total_samples = int(wav_tensor.shape[1])
+    total_duration_s = total_samples / float(target_sr)
+    safe_chunk_s = max(1, min(15, int(chunk_size or 5)))
+
+    # Reset daily quota if past quota_reset_at
+    now_utc = datetime.now(timezone.utc)
+    if user.quota_reset_at is None or user.quota_reset_at.replace(tzinfo=timezone.utc) < now_utc:
+        user.quota_used = 0
+        user.quota_reset_at = now_utc.replace(hour=23, minute=59, second=59, microsecond=0)
+        db.commit()
+
+    # Determine clips: either user-defined manual speaker sections OR whole recording
+    base_name = (title or "").strip()
+    if not base_name:
+        fname = os.path.basename(file.filename or "Recorded Audio")
+        base_name = os.path.splitext(fname)[0].strip() or "Recorded Audio"
+
+    clips: list[dict] = []
+    if segments_json and segments_json.strip():
+        try:
+            parsed = json.loads(segments_json)
+            if not isinstance(parsed, list):
+                raise ValueError("segments_json must be a list")
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid segments_json payload.")
+
+        for idx, item in enumerate(parsed):
+            if not isinstance(item, dict):
+                continue
+            start_s = max(0.0, min(total_duration_s, float(item.get("start_s", 0.0))))
+            end_s = max(0.0, min(total_duration_s, float(item.get("end_s", total_duration_s))))
+            if end_s - start_s < 0.5:
+                continue
+            label = str(item.get("label") or f"Speaker {idx + 1}").strip()[:80]
+            clips.append(
+                {
+                    "title": f"{base_name} - {label}"[:160],
+                    "label": label,
+                    "start_s": start_s,
+                    "end_s": end_s,
+                }
+            )
+
+    if not clips:
+        clips = [
+            {
+                "title": base_name[:160],
+                "label": "Full Recording",
+                "start_s": 0.0,
+                "end_s": total_duration_s,
+            }
+        ]
+
+    # Quota & Fair Usage Policy check across total selected audio seconds
+    requested_seconds = int(round(sum(c["end_s"] - c["start_s"] for c in clips)))
+    if user.tier == "lifetime" and (user.quota_used + requested_seconds) > 43200:
+        raise HTTPException(
+            status_code=403,
+            detail="Fair Usage Policy exceeded. Lifetime users are limited to 12 hours of audio analysis per day.",
+        )
+    if (user.quota_used + requested_seconds) > user.quota_limit:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Daily quota exceeded ({user.quota_used}/{user.quota_limit}s used).",
+        )
+
+    sessions_out = []
+    chunk_samples = safe_chunk_s * target_sr
+    min_tail_samples = int(0.6 * target_sr)
+
+    for clip in clips:
+        s_idx = int(round(clip["start_s"] * target_sr))
+        e_idx = min(total_samples, int(round(clip["end_s"] * target_sr)))
+        clip_tensor = wav_tensor[:, s_idx:e_idx]
+        clip_len = int(clip_tensor.shape[1])
+        if clip_len < int(0.5 * target_sr):
+            continue
+
+        # Slice into chunk_size-second tensors (merge tiny trailing sliver into previous chunk)
+        ranges: list[tuple[int, int]] = []
+        pos = 0
+        while pos < clip_len:
+            nxt = min(clip_len, pos + chunk_samples)
+            if ranges and (nxt - pos) < min_tail_samples:
+                prev_s, _ = ranges[-1]
+                ranges[-1] = (prev_s, nxt)
+            else:
+                ranges.append((pos, nxt))
+            pos = nxt
+
+        sess = DetectionSessionRow(
+            user_id=user.id,
+            title=clip["title"],
+            notes=f"Uploaded file ({clip['label']}: {clip['start_s']:.1f}s - {clip['end_s']:.1f}s)",
+            source="upload",
+            started_at=now_utc,
+            ended_at=now_utc,
+            duration_s=max(1, int(round(clip["end_s"] - clip["start_s"]))),
+            fake_count=0,
+            real_count=0,
+            avg_fake_prob=0.0,
+            verdict="real",
+        )
+        db.add(sess)
+        db.commit()
+        db.refresh(sess)
+
+        chunk_results = []
+        fake_count = 0
+        real_count = 0
+        total_fake_prob = 0.0
+
+        for idx, (c_start, c_end) in enumerate(ranges, start=1):
+            sub_tensor = clip_tensor[:, c_start:c_end]
+            dur_s = round((c_end - c_start) / float(target_sr), 2)
+            ril_prob, fek_prob = await inference.enqueue_inference(sub_tensor, user.tier)
+            is_fake = fek_prob > 0.5
+            total_fake_prob += float(fek_prob)
+            if is_fake:
+                fake_count += 1
+            else:
+                real_count += 1
+
+            seg = DetectionSegmentRow(
+                session_id=sess.id,
+                offset_s=idx,
+                duration_s=dur_s,
+                is_fake=is_fake,
+                fake_prob=float(fek_prob),
+                real_prob=float(ril_prob),
+                recorded_at=datetime.now(timezone.utc),
+            )
+            db.add(seg)
+            chunk_results.append(
+                {
+                    "chunk_index": idx,
+                    "start_s": round(clip["start_s"] + c_start / float(target_sr), 2),
+                    "end_s": round(clip["start_s"] + c_end / float(target_sr), 2),
+                    "duration_s": dur_s,
+                    "fake_prob": float(fek_prob),
+                    "real_prob": float(ril_prob),
+                    "is_fake": is_fake,
+                }
+            )
+
+        total_c = fake_count + real_count
+        avg_fake = (total_fake_prob / total_c) if total_c > 0 else 0.0
+        if total_c == 0:
+            verdict = "real"
+        elif fake_count / total_c >= 0.5:
+            verdict = "fake"
+        elif fake_count / total_c <= 0.1:
+            verdict = "real"
+        else:
+            verdict = "mixed"
+
+        sess.fake_count = fake_count
+        sess.real_count = real_count
+        sess.avg_fake_prob = avg_fake
+        sess.verdict = verdict
+        sess.ended_at = datetime.now(timezone.utc)
+        db.commit()
+
+        sessions_out.append(
+            {
+                "session_id": str(sess.id),
+                "title": sess.title,
+                "label": clip["label"],
+                "start_s": round(clip["start_s"], 2),
+                "end_s": round(clip["end_s"], 2),
+                "duration": sess.duration_s,
+                "fake_ratio": avg_fake,
+                "verdict": verdict,
+                "fake_count": fake_count,
+                "real_count": real_count,
+                "chunks": chunk_results,
+            }
+        )
+
+    user.quota_used = int(user.quota_used or 0) + requested_seconds
+    user.cycle_quota_used = int(user.cycle_quota_used or 0) + requested_seconds
+    db.commit()
+
+    return {
+        "total_duration_s": round(total_duration_s, 2),
+        "quota_used": user.quota_used,
+        "quota_limit": user.quota_limit,
+        "sessions": sessions_out,
+    }
 
 
 # Detection History -----------------------------------------------

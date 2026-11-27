@@ -14,6 +14,8 @@ import ActivityChart from '@/components/dashboard/ActivityChart.vue'
 import LiveHistoryTable from '@/components/dashboard/LiveHistoryTable.vue'
 import AudioProbeModal from '@/components/ui/modals/AudioProbeModal.vue'
 import DashboardTutorial from '@/components/dashboard/DashboardTutorial.vue'
+import RecordedAudioUploader from '@/components/dashboard/RecordedAudioUploader.vue'
+import Icon from '@/components/ui/icons/Icon.vue'
 
 // Scenario B: paid users get everything. user comes from AppLayout (GET /api/users/me).
 const props = defineProps({
@@ -49,6 +51,17 @@ const {
 })
 
 const probeOpen = ref(false)
+const inputSourceTab = ref(
+  (() => {
+    try {
+      const saved = localStorage.getItem('fs_pref_input_source_tab')
+      return saved === 'recorded' ? 'recorded' : 'live'
+    } catch {
+      return 'live'
+    }
+  })(),
+) // 'live' | 'recorded'
+const uploadVerdict = ref(null)
 const showTerminal = ref(
   (() => {
     try {
@@ -72,6 +85,51 @@ const onAudioDetected = ({ bestDeviceId, activeDeviceIds }) => {
     mode.value = 'monitor'
     selectedDevice.value = bestDeviceId
   }
+}
+
+const displayedResult = computed(() =>
+  inputSourceTab.value === 'recorded' && uploadVerdict.value ? uploadVerdict.value : currentResult.value,
+)
+
+const switchInputTab = (tab) => {
+  if (isListening.value) return
+  inputSourceTab.value = tab
+  try {
+    localStorage.setItem('fs_pref_input_source_tab', tab)
+  } catch {}
+}
+
+const onUploadLog = (text) => {
+  liveLogs.value.push({ id: Date.now() + Math.random(), time: new Date().toLocaleTimeString(), text, tone: 'muted' })
+}
+
+const onUploadChunkResult = (c) => {
+  if (c?.quota_used != null) props.updateQuota(c.quota_used, c.quota_limit)
+  const fake = Number(c.fake_prob) || 0
+  const real = Number(c.real_prob) || Math.max(0, 1 - fake)
+  const label = fake >= 0.7 ? 'FAKE' : real >= 0.7 ? 'REAL' : 'UNCERTAIN'
+  const tone = label === 'FAKE' ? 'fake' : label === 'REAL' ? 'real' : 'uncertain'
+
+  uploadVerdict.value = { label, tone, fake, real, silent: false, size: Math.round((c.duration_s || 0) * 32000), segmentIndex: c.chunk_index }
+  liveLogs.value.push({
+    id: Date.now() + Math.random(),
+    time: new Date().toLocaleTimeString(),
+    text: `[${c.label || 'Upload'}] chunk #${c.chunk_index} (${c.start_s}s-${c.end_s}s): ${label} (fake=${fake.toFixed(3)}, session=${c.session_id})`,
+    tone: tone === 'uncertain' ? 'warn' : tone,
+  })
+  liveHistory.value.unshift({
+    id: `up-${c.session_id}-${c.chunk_index}-${Date.now()}`,
+    time: `${c.start_s}s-${c.end_s}s`,
+    chunk: c.chunk_index,
+    size: Math.round((c.duration_s || 0) * 32000),
+    label,
+    tone,
+    fake,
+  })
+}
+
+const onUploadSessionComplete = () => {
+  loadSavedHistory()
 }
 
 // Saved sessions from GET /api/history feed the stats row and the weekly chart.
@@ -132,36 +190,102 @@ onMounted(() => {
 
     <!-- Top row: controls on the left, result and developer log on the right -->
     <div class="grid gap-5 xl:grid-cols-12">
-      <section class="flex flex-col gap-6 rounded-3xl border-2 border-back-secondary bg-back-secondary/40 p-6 xl:col-span-5">
-        <div data-tour="play-control" class="flex items-center gap-5">
-          <PlayButton size="sm" :playing="isListening" :pulse="isListening" :label="buttonText" @click="toggle" />
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center justify-between gap-2">
-              <p class="text-sm font-semibold">{{ buttonText }}</p>
-              <button
-                data-tour="auto-detect"
-                type="button"
-                :disabled="isListening"
-                class="rounded-lg border border-brand-green/50 bg-[#2f6b5e]/80 px-2.5 py-1 text-[11px] font-bold text-white transition hover:bg-[#2f6b5e] disabled:opacity-40"
-                @click="probeOpen = true"
+      <section class="flex flex-col gap-5 rounded-3xl border-2 border-back-secondary bg-back-secondary/40 p-6 xl:col-span-5">
+        <!-- Top-left Live / Recorded mode switch with sliding indicator icons -->
+        <div class="flex items-center justify-between gap-2">
+          <div class="inline-flex rounded-xl border border-white/15 bg-back-prime/80 p-1 text-xs">
+            <button
+              type="button"
+              :disabled="isListening"
+              :class="[
+                'inline-flex items-center overflow-hidden rounded-lg px-3 py-1.5 font-semibold transition-all duration-300 disabled:opacity-45',
+                inputSourceTab === 'live'
+                  ? 'bg-white/15 text-slate-100 shadow-inner'
+                  : 'text-slate-400 hover:text-slate-200',
+              ]"
+              @click="switchInputTab('live')"
+            >
+              <span
+                :class="[
+                  'inline-flex items-center overflow-hidden transition-all duration-300 ease-out',
+                  inputSourceTab === 'live' ? 'mr-1.5 max-w-4 translate-x-0 opacity-100' : 'mr-0 max-w-0 -translate-x-2 opacity-0',
+                ]"
+                aria-hidden="true"
               >
-                Auto-Detect
-              </button>
-            </div>
-            <VolumeMeter :volume="volume" class="mt-3" />
+                <span class="size-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.85)]" />
+              </span>
+              <span>Live</span>
+            </button>
+
+            <button
+              type="button"
+              :disabled="isListening"
+              :class="[
+                'inline-flex items-center overflow-hidden rounded-lg px-3 py-1.5 font-semibold transition-all duration-300 disabled:opacity-45',
+                inputSourceTab === 'recorded'
+                  ? 'bg-white/15 text-slate-100 shadow-inner'
+                  : 'text-slate-400 hover:text-slate-200',
+              ]"
+              @click="switchInputTab('recorded')"
+            >
+              <span
+                :class="[
+                  'inline-flex items-center overflow-hidden transition-all duration-300 ease-out',
+                  inputSourceTab === 'recorded' ? 'mr-1.5 max-w-4 translate-x-0 opacity-100' : 'mr-0 max-w-0 -translate-x-2 opacity-0',
+                ]"
+                aria-hidden="true"
+              >
+                <Icon name="play" :size="11" class="text-brand-green" />
+              </span>
+              <span>Recorded</span>
+            </button>
           </div>
+          <span class="text-[11px] text-slate-400">
+            {{ inputSourceTab === 'live' ? 'Real-time stream' : 'Upload & split speakers' }}
+          </span>
         </div>
 
-        <div data-tour="capture-controls">
-          <CaptureControls
-            v-model:mode="mode"
-            v-model:selected-device="selectedDevice"
-            v-model:chunk-size="chunkSize"
-            :devices="devices"
-            :verified-devices="verifiedDevices"
-            :locked="isListening"
-          />
-        </div>
+        <template v-if="inputSourceTab === 'live'">
+          <div data-tour="play-control" class="flex items-center gap-5">
+            <PlayButton size="sm" :playing="isListening" :pulse="isListening" :label="buttonText" @click="toggle" />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center justify-between gap-2">
+                <p class="text-sm font-semibold">{{ buttonText }}</p>
+                <button
+                  data-tour="auto-detect"
+                  type="button"
+                  :disabled="isListening"
+                  class="rounded-lg border border-brand-green/50 bg-[#2f6b5e]/80 px-2.5 py-1 text-[11px] font-bold text-white transition hover:bg-[#2f6b5e] disabled:opacity-40"
+                  @click="probeOpen = true"
+                >
+                  Auto-Detect
+                </button>
+              </div>
+              <VolumeMeter :volume="volume" class="mt-3" />
+            </div>
+          </div>
+
+          <div data-tour="capture-controls">
+            <CaptureControls
+              v-model:mode="mode"
+              v-model:selected-device="selectedDevice"
+              v-model:chunk-size="chunkSize"
+              :devices="devices"
+              :verified-devices="verifiedDevices"
+              :locked="isListening"
+            />
+          </div>
+        </template>
+
+        <RecordedAudioUploader
+          v-else
+          v-model:chunk-size="chunkSize"
+          :disabled="isListening"
+          @chunk-result="onUploadChunkResult"
+          @session-complete="onUploadSessionComplete"
+          @log="onUploadLog"
+          @error="(msg) => { if (msg) errorMessage = msg }"
+        />
 
         <AudioProbeModal
           v-model="probeOpen"
@@ -187,7 +311,7 @@ onMounted(() => {
           </button>
 
           <VerdictDisplay
-            :result="currentResult"
+            :result="displayedResult"
             :listening="isListening"
             :status-text="statusText"
             :status-warn="statusWarn"
