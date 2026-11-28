@@ -1,5 +1,7 @@
 // Shared helpers for the authenticated part of the app.
-export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:7860'
+export const API_BASE = (
+  import.meta.env.VITE_API_URL || 'https://falsespeech.putrahomelab.com'
+).replace(/\/+$/, '')
 export const WS_BASE = API_BASE.replace(/^http/, 'ws')
 export const TOKEN_KEY = 'access_token'
 

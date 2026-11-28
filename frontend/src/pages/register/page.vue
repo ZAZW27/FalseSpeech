@@ -7,7 +7,7 @@ import FormField from "@/components/ui/inputs/FormField.vue";
 import BaseButton from "@/components/ui/buttons/BaseButton.vue";
 import Icon from "@/components/ui/icons/Icon.vue";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:7860";
+const API_BASE = (import.meta.env.VITE_API_URL || "https://falsespeech.putrahomelab.com").replace(/\/+$/, "");
 const SEND_OTP_URL = `${API_BASE}/api/auth/register/send-otp`;
 const VERIFY_OTP_URL = `${API_BASE}/api/auth/register/verify-otp`;
 const REDIRECT_DELAY_MS = 1500;

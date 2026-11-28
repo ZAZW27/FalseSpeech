@@ -9,7 +9,7 @@ import BaseButton from '@/components/ui/buttons/BaseButton.vue'
 import BaseModal from '@/components/ui/modals/BaseModal.vue'
 import Icon from '@/components/ui/icons/Icon.vue'
 
-const API_URL = `${import.meta.env.VITE_API_URL ?? 'http://localhost:7860'}/api/auth/login`
+const API_URL = `${(import.meta.env.VITE_API_URL || 'https://falsespeech.putrahomelab.com').replace(/\/+$/, '')}/api/auth/login`
 const TOKEN_KEY = 'access_token'
 
 const router = useRouter()

@@ -44,6 +44,5 @@ hf_hub_download('nii-yamagishilab/wav2vec-large-anti-deepfake', 'config.json')" 
 # Expose the port your app will run on (adjust if needed, e.g., 8000 for FastAPI)
 EXPOSE 7860
 
-# Define the command to run your app
-# Replace 'app.py' with the name of your main Python script
-CMD ["python", "app.py"]
+# Run FastAPI via uvicorn in production mode
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860"]
