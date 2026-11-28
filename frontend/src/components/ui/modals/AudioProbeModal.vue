@@ -24,6 +24,9 @@ const isPlayingTone = ref(false)
 let cancelScan = false
 let probeAudio = null
 let fadeRaf = null
+let synthCtx = null
+let synthMasterGain = null
+let synthOscs = []
 
 const isInternalDriver = (label) => {
   const s = String(label || '').toLowerCase()
@@ -39,6 +42,60 @@ const activeExternalRows = computed(() => rows.value.filter((r) => r.status === 
 const noInternalDetected = computed(() => scanDone.value && activeInternalRows.value.length === 0)
 const selectedRow = computed(() => rows.value.find((r) => r.deviceId === selectedDriverId.value) || null)
 
+const startSynthFallbackTone = () => {
+  try {
+    const Context = window.AudioContext || window.webkitAudioContext
+    if (!Context) return false
+    synthCtx = new Context()
+    if (synthCtx.state === 'suspended') synthCtx.resume().catch(() => {})
+    synthMasterGain = synthCtx.createGain()
+    synthMasterGain.gain.setValueAtTime(0.001, synthCtx.currentTime)
+    synthMasterGain.gain.exponentialRampToValueAtTime(0.18, synthCtx.currentTime + 0.18)
+    synthMasterGain.connect(synthCtx.destination)
+
+    // Warm C-major calming chime chord (C5, E5, G5)
+    synthOscs = [523.25, 659.25, 783.99].map((freq, idx) => {
+      const osc = synthCtx.createOscillator()
+      const g = synthCtx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      g.gain.value = idx === 0 ? 0.5 : 0.25
+      osc.connect(g)
+      g.connect(synthMasterGain)
+      osc.start()
+      return osc
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+const stopSynthFallbackTone = (immediate = false) => {
+  const ctx = synthCtx
+  const master = synthMasterGain
+  const oscs = synthOscs
+  synthCtx = null
+  synthMasterGain = null
+  synthOscs = []
+  if (!ctx) return
+  try {
+    if (!immediate && master) {
+      const now = ctx.currentTime
+      master.gain.cancelScheduledValues(now)
+      master.gain.setValueAtTime(Math.max(0.001, master.gain.value), now)
+      master.gain.exponentialRampToValueAtTime(0.0001, now + 0.9)
+      setTimeout(() => {
+        oscs.forEach((o) => { try { o.stop() } catch {} })
+        ctx.close().catch(() => {})
+      }, 950)
+      return
+    }
+    oscs.forEach((o) => { try { o.stop() } catch {} })
+    ctx.close().catch(() => {})
+  } catch {}
+}
+
 const startTestTone = async () => {
   stopTestTone(true)
   try {
@@ -48,7 +105,9 @@ const startTestTone = async () => {
     await probeAudio.play()
     isPlayingTone.value = true
   } catch {
-    isPlayingTone.value = false
+    probeAudio = null
+    // Fallback to Web Audio API synthesized chime if WAV playback is blocked or slow
+    isPlayingTone.value = startSynthFallbackTone()
   }
 }
 
@@ -57,6 +116,7 @@ const stopTestTone = (immediate = false) => {
     cancelAnimationFrame(fadeRaf)
     fadeRaf = null
   }
+  stopSynthFallbackTone(immediate)
   const audio = probeAudio
   probeAudio = null
   isPlayingTone.value = false
@@ -158,14 +218,18 @@ const runScan = async () => {
   scanDone.value = false
   selectedDriverId.value = ''
 
+  // Start chime immediately inside the click gesture BEFORE awaiting getUserMedia/enumerateDevices
+  // so Brave/Chrome/Safari never block playback for losing user-gesture activation
+  const tonePromise = startTestTone()
+
   await prepareDeviceList()
   if (cancelScan) {
+    stopTestTone(true)
     isScanning.value = false
     return
   }
 
-  // Play a gentle, soothing chime through system output so loopback/monitor drivers light up automatically
-  await startTestTone()
+  await tonePromise
   // Brief head-start so the chime fade-in reaches the audio pipeline before probing the first driver
   await new Promise((r) => setTimeout(r, 250))
 
