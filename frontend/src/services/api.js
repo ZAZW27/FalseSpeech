@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:7860';
+const API_BASE_URL = (import.meta.env.VITE_API_URL || 'https://falsespeech.putrahomelab.com').replace(/\/+$/, '');
 
 export async function loginUser(email, password) {
     const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
